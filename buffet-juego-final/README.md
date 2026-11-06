@@ -45,12 +45,19 @@ Para verificar que compila: `mvn clean compile`.
 
 src/main/java
 ├── ui/            Ventana, formulario, tabla, escena 2D del buffet (EscenaBuffet, Java2D) y cuadros de diálogo. Sin reglas de negocio ni SQL.
+|
 ├── service/       PartidaService (alta/baja/modificación/consulta) y JuegoService (reglas del juego). Lanzan las excepciones.
+|
 ├── dao/           EntidadDAO / JugadorDAO / Conexion: CRUD sobre MySQL.
+|
 ├── modelo/        Mundo → Personaje → Jugador, Cliente, NPC; Objeto, Tarea, Inventario.
+|
 ├── interfaces/    Interactuable
-├── excepciones/   Las 5 excepciones del juego + PersistenciaException (fallas de base de datos)
+|
+├── excepciones/   Las 5 excepciones del juego + PersistenciaException (fallas de base de datos})
+|
 └── main/          Main: abre la ventana
+
 referencia-consola/  Main y JuegoService originales de la versión de consola (solo como referencia, no se compilan)
 
 
