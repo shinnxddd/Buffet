@@ -3,7 +3,7 @@
 Juego de terror psicológico ambientado en el buffet de un colegio. Atendés clientes, hacés tareas y cuidás tu cordura.
 Proyecto Integrador de **Laboratorio de Programación Orientada a Objetos** (Ejercitación 16: escalado a interfaz gráfica).
 
-- **Integrantes:** Aaron Serrano
+- **Integrantes:** Octavio Pagni -- Jazmin Toledano
 - **Tecnología gráfica elegida:** Java **Swing + FlatLaf** (Maven)
 - **Base de datos:** MySQL
 
