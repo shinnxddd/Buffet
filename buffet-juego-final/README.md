@@ -17,8 +17,7 @@ Proyecto Integrador de Laboratorio de Programación Orientada a Objetos (Ejercit
 
 1. Crear la base de datos: ejecutá el script `sql/schema.sql` en MySQL (crea la base `buffet_terror`, la tabla `entidades` y una partida de ejemplo)
    "mysql -u root -p < sql/schema.sql"
-2. Configurar la conexión (opcional si usás `root` sin clave en `localhost`): copiá `config.example.properties` como `config.properties` y completá tus datos. Ese archivo está en `.gitignore`, no se sube a GitHub.
-3. 
+2. Configurar la conexión (opcional si usás `root` sin clave en `localhost`): copiá `config.example.properties` como `config.properties` y completá tus datos. Ese archivo está en `.gitignore`, no se sube a GitHub. 
 4. Jugar:
    "mvn compile exec:java"
    También podés generar un `.jar` ejecutable con `mvn package` y abrir `target/buffet-juego-1.0.0.jar` con doble clic (o `java -jar target/buffet-juego-1.0.0.jar`, parado en la carpeta del proyecto para que encuentre `config.properties`).
