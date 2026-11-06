@@ -44,6 +44,7 @@ Para verificar que compila: `mvn clean compile`.
 # Arquitectura en capas
 
 src/main/java
+---------------------
 ├── ui/            Ventana, formulario, tabla, escena 2D del buffet (EscenaBuffet, Java2D) y cuadros de diálogo. Sin reglas de negocio ni SQL.
 |
 ├── service/       PartidaService (alta/baja/modificación/consulta) y JuegoService (reglas del juego). Lanzan las excepciones.
