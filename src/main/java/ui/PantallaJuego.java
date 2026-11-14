@@ -2,6 +2,7 @@ package ui;
 
 import excepciones.InteraccionInvalidaException;
 import excepciones.ObjetoNoDisponibleException;
+import excepciones.PedidoInvalidoException;
 import excepciones.PersistenciaException;
 import excepciones.TareaNoDisponibleException;
 import modelo.Cliente;
@@ -927,9 +928,10 @@ public class PantallaJuego extends JPanel implements ActionListener {
                 default -> "No pasa nada.";
             };
             registrar(mensaje, Tipo.CHARLA);
-        } catch (InteraccionInvalidaException | TareaNoDisponibleException e) {
+        } catch (InteraccionInvalidaException | TareaNoDisponibleException | PedidoInvalidoException e) {
             registrar(e.getMessage(), Tipo.ERROR);
             mostrarToast(e.getMessage(), Tipo.ERROR);
+            avisarError(e);
         }
         verificarFin();
     }
@@ -939,7 +941,7 @@ public class PantallaJuego extends JPanel implements ActionListener {
         return corte < 0 ? id : id.substring(0, corte);
     }
 
-    private String atenderMostrador() throws InteraccionInvalidaException {
+    private String atenderMostrador() throws InteraccionInvalidaException, PedidoInvalidoException {
         Cliente c = juego.clienteActual();
         if (c == null) {
             return "No queda nadie en el mostrador. Podés cerrar la jornada.";
@@ -947,11 +949,9 @@ public class PantallaJuego extends JPanel implements ActionListener {
         if (!c.isPedidoTomado()) {
             return juego.tomarPedido();
         }
-        if (juego.tieneBandejaPara(c)) {
-            return juego.entregarPedido();
-        }
-        return "Ya le anotaste el pedido a " + c.getNombre() + " (" + c.getPedido()
-                + "). Preparalo en la cocina.";
+        // Siempre pasa por el Service: si la bandeja no es la correcta,
+        // PedidoInvalidoException viaja hasta la UI y se muestra con JOptionPane.
+        return juego.entregarPedido();
     }
 
     private void usarRapido() {
@@ -960,6 +960,7 @@ public class PantallaJuego extends JPanel implements ActionListener {
         } catch (ObjetoNoDisponibleException | InteraccionInvalidaException e) {
             registrar(e.getMessage(), Tipo.ERROR);
             mostrarToast(e.getMessage(), Tipo.ERROR);
+            avisarError(e);
         }
         verificarFin();
     }
@@ -970,6 +971,7 @@ public class PantallaJuego extends JPanel implements ActionListener {
         } catch (ObjetoNoDisponibleException | InteraccionInvalidaException e) {
             registrar(e.getMessage(), Tipo.ERROR);
             mostrarToast(e.getMessage(), Tipo.ERROR);
+            avisarError(e);
         }
         verificarFin();
     }
@@ -979,6 +981,7 @@ public class PantallaJuego extends JPanel implements ActionListener {
             registrar(juego.soltarEnMano(), Tipo.CHARLA);
         } catch (ObjetoNoDisponibleException e) {
             mostrarToast(e.getMessage(), Tipo.ERROR);
+            avisarError(e);
         }
         verificarFin();
     }
@@ -1057,6 +1060,7 @@ public class PantallaJuego extends JPanel implements ActionListener {
             return true;
         } catch (PersistenciaException e) {
             mostrarToast("No se pudo guardar: " + e.getMessage(), Tipo.ERROR);
+            avisarError(e);
             return false;
         }
     }
@@ -1078,6 +1082,22 @@ public class PantallaJuego extends JPanel implements ActionListener {
         bitacora.addLast(new Entrada(texto, tipo));
         while (bitacora.size() > 40) {
             bitacora.removeFirst();
+        }
+    }
+
+    /**
+     * Muestra el cuadro de diálogo de la excepción y detiene el reloj mientras está abierto:
+     * un JOptionPane modal comparte el EDT y, si no paráramos el Timer, la partida seguiría corriendo detrás.
+     */
+    private void avisarError(Exception e) {
+        boolean corriendo = timer.isRunning();
+        timer.stop();
+        try {
+            Dialogos.error(this, e);
+        } finally {
+            if (corriendo && isDisplayable()) {
+                timer.start();
+            }
         }
     }
 

@@ -109,8 +109,10 @@ public final class Tema {
         UIManager.put("ProgressBar.foreground", "#7FB58A");
         UIManager.put("ProgressBar.height", 10);
 
-        UIManager.put("OptionPane.background", "#1F2B26");
-        UIManager.put("OptionPane.messageForeground", "#EDE8D8");
+        UIManager.put("OptionPane.background", TARJETA);
+        UIManager.put("OptionPane.messageForeground", TEXTO);
+        UIManager.put("OptionPane.messageFont", CUERPO);
+        UIManager.put("OptionPane.buttonFont", CUERPO);
         UIManager.put("ToolTip.background", "#0D1512");
         UIManager.put("ToolTip.foreground", "#EDE8D8");
         UIManager.put("ToolTip.border", BorderFactory.createLineBorder(BORDE, 1, true));

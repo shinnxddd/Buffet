@@ -44,7 +44,8 @@ final class Dialogos {
     }
 
     private static void aviso(Component padre, String titulo, String mensaje, int tipo) {
-        String seguro = mensaje.replace("&", "&amp;").replace("<", "&lt;");
+        String texto = mensaje == null ? "" : mensaje;
+        String seguro = texto.replace("&", "&amp;").replace("<", "&lt;");
         JOptionPane.showMessageDialog(padre,
                 "<html><body style='width:300px'>" + seguro + "</body></html>", titulo, tipo);
     }

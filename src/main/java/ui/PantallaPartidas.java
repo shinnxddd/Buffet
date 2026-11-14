@@ -7,6 +7,7 @@ import modelo.Jugador;
 import service.PartidaService;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
@@ -28,8 +29,8 @@ public class PantallaPartidas extends JPanel {
     private static final int ALTO = EscenaBuffet.ALTO;
 
     private static final int FILAS = 6;
-    private static final int FILA_ALTO = 17;
-    private static final int FILA_Y = 76;
+    private static final int FILA_ALTO = 16;
+    private static final int FILA_Y = 84;
 
     private static final Rectangle LISTA = new Rectangle(14, 52, 356, 130);
     private static final Rectangle BTN_JUGAR = new Rectangle(16, 188, 110, 18);
@@ -51,6 +52,8 @@ public class PantallaPartidas extends JPanel {
     private final Consumer<Jugador> alJugar;
     private final BufferedImage lienzo = new BufferedImage(ANCHO, ALTO, BufferedImage.TYPE_INT_ARGB);
     private final Timer timer;
+    private final DefaultTableModel modeloPartidas;
+    private final JTable tablaPartidas;
 
     private List<Jugador> partidas = new ArrayList<>();
     private int seleccion;
@@ -80,6 +83,34 @@ public class PantallaPartidas extends JPanel {
         setBackground(new Color(0x060908));
         setPreferredSize(new Dimension(ANCHO * 4, ALTO * 4));
         setLayout(null);
+
+        // Tabla real de Swing: es la fuente de datos de la lista y del detalle.
+        // Se pinta dentro del lienzo pixel art con la selección sincronizada.
+        modeloPartidas = new DefaultTableModel(
+                new Object[]{"Partida", "Día", "Tareas", "Cordura"}, 0) {
+            @Override
+            public boolean isCellEditable(int fila, int columna) {
+                return false;
+            }
+        };
+        tablaPartidas = new JTable(modeloPartidas);
+        tablaPartidas.setAutoCreateRowSorter(false);
+        tablaPartidas.setFocusable(false);
+        tablaPartidas.setOpaque(false);
+        tablaPartidas.setRowHeight(FILA_ALTO - 1);
+        tablaPartidas.setShowGrid(false);
+        tablaPartidas.setTableHeader(null);
+        tablaPartidas.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        tablaPartidas.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) {
+                return;
+            }
+            int fila = tablaPartidas.getSelectedRow();
+            if (fila >= 0 && fila < partidas.size()) {
+                seleccion = fila;
+                asegurarVisible();
+            }
+        });
 
         timer = new Timer(80, e -> {
             tick++;
@@ -162,8 +193,10 @@ public class PantallaPartidas extends JPanel {
         } catch (PersistenciaException e) {
             partidas = new ArrayList<>();
             mostrarError(e.getMessage());
+            Dialogos.error(this, e);
         }
 
+        cargarTabla();
         if (idPrevio >= 0) {
             for (int i = 0; i < partidas.size(); i++) {
                 if (partidas.get(i).getId() == idPrevio) {
@@ -174,7 +207,28 @@ public class PantallaPartidas extends JPanel {
         }
         seleccion = partidas.isEmpty() ? 0 : Math.max(0, Math.min(seleccion, partidas.size() - 1));
         asegurarVisible();
+        sincronizarTabla();
         repaint();
+    }
+
+    /** Copia las partidas persistidas al modelo de la JTable (se llama al abrir y tras cada CRUD). */
+    private void cargarTabla() {
+        modeloPartidas.setRowCount(0);
+        for (Jugador j : partidas) {
+            modeloPartidas.addRow(new Object[]{
+                    j.getNombre(), j.getDiaActual(), j.getTareasCompletadas(), j.getCordura()
+            });
+        }
+    }
+
+    /** Refleja la selección de la lista dibujada en la JTable. */
+    private void sincronizarTabla() {
+        if (tablaPartidas.getRowCount() == 0) {
+            tablaPartidas.clearSelection();
+            return;
+        }
+        int fila = Math.max(0, Math.min(seleccion, tablaPartidas.getRowCount() - 1));
+        tablaPartidas.setRowSelectionInterval(fila, fila);
     }
 
     private Jugador seleccionada() {
@@ -185,10 +239,12 @@ public class PantallaPartidas extends JPanel {
         if (partidas.isEmpty()) {
             seleccion = 0;
             desplazamiento = 0;
+            sincronizarTabla();
             return;
         }
         seleccion = Math.max(0, Math.min(indice, partidas.size() - 1));
         asegurarVisible();
+        sincronizarTabla();
     }
 
     private void asegurarVisible() {
@@ -324,12 +380,13 @@ public class PantallaPartidas extends JPanel {
         Pixel.panel(g, LISTA.x, LISTA.y, LISTA.width, LISTA.height,
                 new Color(0x0B1210), Pixel.BORDE);
         Pixel.texto(g, "PARTIDAS GUARDADAS", 22, 66, Pixel.T_CUERPO, Pixel.MOSTAZA, true);
-        Pixel.textoDerecha(g, partidas.size() + (partidas.size() == 1 ? " guardada" : " guardadas"),
+        Pixel.textoDerecha(g, tablaPartidas.getRowCount()
+                        + (tablaPartidas.getRowCount() == 1 ? " guardada" : " guardadas"),
                 362, 66, Pixel.T_CHICO, Pixel.GRIS_OSCURO);
         g.setColor(Pixel.BORDE);
         g.fillRect(20, 70, 224, 1);
 
-        if (partidas.isEmpty()) {
+        if (tablaPartidas.getRowCount() == 0) {
             Pixel.textoCentrado(g, "Todavía no hay partidas.", 134, 128,
                     Pixel.T_CUERPO, Pixel.CREMA, true);
             Pixel.textoCentrado(g, "Creá la primera con N.", 134, 144,
@@ -337,9 +394,16 @@ public class PantallaPartidas extends JPanel {
             return;
         }
 
-        int fin = Math.min(partidas.size(), desplazamiento + FILAS);
+        // Encabezados de la tabla. La JTable real es la que guarda estos valores.
+        Pixel.texto(g, "PARTIDA", 27, 81, Pixel.T_CHICO, Pixel.GRIS_OSCURO);
+        Pixel.texto(g, "DÍA", 140, 81, Pixel.T_CHICO, Pixel.GRIS_OSCURO);
+        Pixel.texto(g, "CORD.", 166, 81, Pixel.T_CHICO, Pixel.GRIS_OSCURO);
+        Pixel.texto(g, "TAREAS", 208, 81, Pixel.T_CHICO, Pixel.GRIS_OSCURO);
+        g.setColor(new Color(0x1B2621));
+        g.fillRect(20, 83, 224, 1);
+
+        int fin = Math.min(tablaPartidas.getRowCount(), desplazamiento + FILAS);
         for (int i = desplazamiento; i < fin; i++) {
-            Jugador j = partidas.get(i);
             int fila = i - desplazamiento;
             int fy = FILA_Y + fila * FILA_ALTO;
             boolean elegida = i == seleccion;
@@ -353,13 +417,14 @@ public class PantallaPartidas extends JPanel {
                 g.fillRect(20, fy, 224, 15);
             }
 
-            String nombre = Pixel.recortar(g, j.getNombre(), 104, Pixel.T_CUERPO, elegida);
+            String nombre = Pixel.recortar(g, String.valueOf(tablaPartidas.getValueAt(i, 0)),
+                    104, Pixel.T_CUERPO, elegida);
             Pixel.texto(g, nombre, 27, fy + 11, Pixel.T_CUERPO,
                     elegida ? Pixel.CREMA : Pixel.GRIS, elegida);
-            Pixel.texto(g, "D" + j.getDiaActual(), 140, fy + 11, Pixel.T_CHICO,
-                    elegida ? Pixel.MOSTAZA_CLARA : Pixel.GRIS_OSCURO, elegida);
+            Pixel.texto(g, "D" + numero(tablaPartidas.getValueAt(i, 1)), 140, fy + 11,
+                    Pixel.T_CHICO, elegida ? Pixel.MOSTAZA_CLARA : Pixel.GRIS_OSCURO, elegida);
 
-            int cordura = Math.max(0, Math.min(100, j.getCordura()));
+            int cordura = Math.max(0, Math.min(100, numero(tablaPartidas.getValueAt(i, 3))));
             g.setColor(new Color(0x1B2621));
             g.fillRect(166, fy + 5, 36, 5);
             g.setColor(colorCordura(cordura));
@@ -367,18 +432,23 @@ public class PantallaPartidas extends JPanel {
             if (relleno > 0) {
                 g.fillRect(167, fy + 6, relleno, 3);
             }
-            Pixel.texto(g, "T" + j.getTareasCompletadas(), 208, fy + 11, Pixel.T_CHICO,
-                    elegida ? Pixel.CREMA : Pixel.GRIS_OSCURO, elegida);
+            Pixel.texto(g, "T" + numero(tablaPartidas.getValueAt(i, 2)), 208, fy + 11,
+                    Pixel.T_CHICO, elegida ? Pixel.CREMA : Pixel.GRIS_OSCURO, elegida);
         }
 
-        if (partidas.size() > FILAS) {
-            int altoBarra = Math.max(8, 108 * FILAS / partidas.size());
-            int yBarra = 76 + 108 * desplazamiento / partidas.size();
+        if (tablaPartidas.getRowCount() > FILAS) {
+            int total = tablaPartidas.getRowCount();
+            int altoBarra = Math.max(8, 90 * FILAS / total);
+            int yBarra = FILA_Y + 90 * desplazamiento / total;
             g.setColor(new Color(0x1B2621));
-            g.fillRect(241, 76, 2, 108);
+            g.fillRect(241, FILA_Y, 2, 90);
             g.setColor(Pixel.GRIS_OSCURO);
             g.fillRect(241, yBarra, 2, altoBarra);
         }
+    }
+
+    private static int numero(Object valor) {
+        return valor instanceof Number n ? n.intValue() : 0;
     }
 
     private void dibujarDetalle(Graphics2D g) {
@@ -733,6 +803,7 @@ public class PantallaPartidas extends JPanel {
         try {
             numeroDia = Integer.parseInt(dia.trim());
         } catch (NumberFormatException e) {
+            Dialogos.formato(this, "El día tiene que ser un número entero, por ejemplo 1.");
             mostrarError("El día tiene que ser un número entero, por ejemplo 1.");
             return;
         }
@@ -760,6 +831,7 @@ public class PantallaPartidas extends JPanel {
             }
         } catch (DiaInvalidoException | InteraccionInvalidaException | PersistenciaException e) {
             mostrarError(e.getMessage());
+            Dialogos.error(this, e);
         }
     }
 
@@ -789,6 +861,7 @@ public class PantallaPartidas extends JPanel {
             capa = Capa.LISTA;
             porBorrar = null;
             mostrarError(e.getMessage());
+            Dialogos.error(this, e);
         }
     }
 

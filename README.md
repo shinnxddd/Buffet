@@ -3,77 +3,37 @@
 Juego de terror psicológico ambientado en el buffet de un colegio, llamado "El Buffet". Atendés clientes, hacés tareas y cuidás tu cordura.
 Proyecto Integrador de Laboratorio de Programación Orientada a Objetos (Ejercitación 16: escalado a interfaz gráfica).
 
-- **Integrantes:** Toledano Jazmín y Octavio Pagni
-- **Tecnología gráfica:** Java Swing + FlatLaf (Maven)
-- **Base de datos:** MySQL
-- **El juego se ejecuta en Java** (desde el IDE o con Maven). No hay versión web ni HTML.
+- Integrantes: Toledano Jazmín y Octavio Pagni
+- Tecnología gráfica: Java Swing + FlatLaf (Maven)
+- Base de datos: MySQL
 
 # Requisitos
 
 - JDK 17 o superior
-- Maven 3.8+ (si no lo usás desde el IDE)
+- Maven 3.8+
 - MySQL 8 (o MariaDB) corriendo en `localhost:3306`
 
-# Cómo ejecutarlo
+# Puesta en marcha
 
-## 1. Clonar el repositorio
+1. Instalá **JDK 17 o superior** y **Maven 3.8+**.
+2. Tené **MySQL 8** (o MariaDB) corriendo en `localhost:3306`.
+3. Creá la base ejecutando el script:
 
-```bash
-git clone <URL-del-repositorio>
-cd buffet-juego
-```
+   ```bash
+   mysql -u root -p < sql/schema.sql
+   ```
 
-## 2. Crear la base de datos
+   El script crea `buffet_terror`, la tabla `entidades` y una partida de ejemplo.
+4. Copiá `config.example.properties` como `config.properties` y completá usuario/clave si hace falta. Ese archivo está en `.gitignore` y no se sube al repositorio.
+5. Compilá y ejecutá con Maven desde la raíz del proyecto:
 
-Ejecutá el script `sql/schema.sql` en MySQL (crea la base `buffet_terror`, la tabla `entidades` y una partida de ejemplo):
+   ```bash
+   mvn clean compile
+   mvn compile exec:java
+   ```
 
-```bash
-mysql -u root -p < sql/schema.sql
-```
-
-## 3. Configurar la conexión
-
-Si usás `root` sin clave en `localhost` no hace falta hacer nada. Si no, copiá `config.example.properties` como `config.properties` (junto al `pom.xml`) y completá tus datos:
-
-```bash
-cp config.example.properties config.properties
-```
-
-`config.properties` está en `.gitignore`, así que no se sube al repositorio.
-
-## 4. Jugar
-
-**Con Maven (terminal):**
-
-```bash
-mvn compile exec:java
-```
-
-**Desde el IDE (IntelliJ IDEA, Eclipse, NetBeans, VS Code):**
-
-1. Abrí la carpeta del proyecto como proyecto Maven (el IDE lee el `pom.xml` y baja las dependencias).
-2. Ejecutá la clase `main.Main` (`src/main/java/main/Main.java`).
-3. El directorio de trabajo (*working directory*) tiene que ser la raíz del proyecto, para que encuentre `config.properties`. Es el valor por defecto en los IDEs.
-
-**Con un `.jar` (opcional):** `mvn package` genera `target/buffet-juego-1.0.0.jar`, que se abre con `java -jar target/buffet-juego-1.0.0.jar` parado en la raíz del proyecto. La carpeta `target/` no se sube al repositorio.
-
-Para verificar que compila: `mvn clean compile`.
-
-# Flujo de trabajo con Git
-
-- Una **rama por integrante** (por ejemplo `jazmin` y `octavio`), y `main` queda como rama estable.
-- Todo se hace con commits desde la terminal, con mensajes que digan qué cambió:
-
-```bash
-git checkout -b nombre-de-la-rama      # crear la rama (solo la primera vez)
-git add .
-git commit -m "Describe el cambio"
-git push -u origin nombre-de-la-rama   # la primera vez; después alcanza con git push
-```
-
-- Los cambios se integran a `main` con `git merge` (o un Pull Request) una vez que compilan y se probaron.
-- El `.gitignore` deja afuera `target/`, los archivos de los IDEs y `config.properties`.
-- El repositorio contiene solo la versión actual del juego. El historial de versiones anteriores queda en los commits, no en carpetas copiadas.
+   También podés abrir `pom.xml` en el IDE y ejecutar `main.Main`.
+6. Si querés un `.jar` ejecutable: `mvn package` y después `java -jar target/buffet-juego-1.0.0.jar` (parado en la raíz para que encuentre `config.properties`).
 
 # Cómo se juega
 
@@ -131,7 +91,7 @@ git push -u origin nombre-de-la-rama   # la primera vez; después alcanza con gi
 
 Todo el juego —el menú de partidas, el buffet, el HUD, los diálogos, el cuaderno y la intro— se dibuja dentro del mismo **lienzo de 384x240 píxeles** y después se escala por un factor entero (hasta 4x en 1920x1080, 2x en pantallas chicas) con *nearest neighbor*, así ningún píxel queda deformado ni borroso. No hay paneles de Swing alrededor del juego: el estado, la bitácora, el menú y los formularios son parte de la misma escena.
 
-- **Menú de partidas pixel art:** lista con barra de cordura por partida, ficha del jugador, botones de jugar/nueva/editar/borrar y formulario de alta o edición dentro del lienzo. La ventana usa el mismo tamaño entero que el juego, no una tabla de Swing.
+- **Menú de partidas pixel art con JTable real:** la lista es un `JTable` con `DefaultTableModel` que carga las partidas persistidas al abrir y se refresca después de cada alta, modificación o baja. La tabla se pinta dentro del lienzo junto con la ficha del jugador, los botones de jugar/nueva/editar/borrar y el formulario de alta o edición.
 - **Intro de cinco pasos:** cartel de "BUFFET TERROR" que parpadea, tres noches con texto a máquina y una última pantalla con los controles. Se avanza con `ENTER` y se sale con `ESC`.
 - **HUD dentro del lienzo:** día y sala, pedidos y tareas, barra de cordura, objeto en mano, objetivo del turno y las dos últimas entradas de la bitácora. El cartel de interacción aparece sobre la cabeza del personaje.
 - **Cuaderno (`TAB`):** pedido actual, tareas pendientes con su lugar y herramienta, e inventario navegable con `↑↓` + `ENTER`.
@@ -141,9 +101,18 @@ Todo el juego —el menú de partidas, el buffet, el HUD, los diálogos, el cuad
 - El arte se dibuja a mano con rectángulos de píxeles (elipses por filas, luces con tramado, partículas) y la tipografía es [Silkscreen](https://fonts.google.com/specimen/Silkscreen) (SIL Open Font License), incluida en `src/main/resources/fonts/`.
 - En Windows con escalado fraccionario (125 %, 150 %), `Main` fuerza `sun.java2d.uiScale=1.0` para que el zoom del sistema no arruine la nitidez del pixel art.
 
+# Contenido del repositorio
+
+- `pom.xml`: proyecto Maven con Java 17, MySQL Connector/J, FlatLaf y `exec-maven-plugin`.
+- `src/main/java`: código fuente por capas (`modelo`, `dao`, `service`, `excepciones`, `ui`, `main`).
+- `src/main/resources/fonts`: tipografía pixel art Silkscreen.
+- `sql/schema.sql`: crea la base `buffet_terror`, la tabla `entidades` y una partida de ejemplo.
+- `docs/`: capturas de la ventana principal, el registro exitoso y los cuadros de error.
+- `config.example.properties`: plantilla de conexión (el `config.properties` real va en `.gitignore`).
+- `.gitignore`: excluye `target/`, archivos de IDE, credenciales y la carpeta de referencia de consola.
+
 # Arquitectura en capas
 
-```text
 src/main/java
 ---------------------
 ├── ui/            Ventana, menú de partidas, escena pixel art de las cuatro salas (EscenaBuffet + Pixel, Java2D), pantalla de juego completa (intro, HUD, cuaderno, pausa) y tema FlatLaf. Sin reglas de negocio ni SQL.         
@@ -156,13 +125,15 @@ src/main/java
 |
 ├── interfaces/    Interactuable      
 |
-├── excepciones/   Las 5 excepciones del juego + PersistenciaException (fallas de base de datos)         
-|
-└── main/          Main: abre la ventana   
+├── excepciones/   Las 5 excepciones del juego + PersistenciaException (fallas de base de datos)
+│
+└── main/          Main: abre la ventana
 
-```
+Flujo: Usuario → UI → Service → DAO → MySQL. Las excepciones viajan del Service a la UI, que las muestra con `JOptionPane` (y además deja el aviso en el HUD), sin cortar la partida.
 
-Flujo: Usuario → UI → Service → DAO → MySQL. Las excepciones viajan del Service a la UI, que las muestra en el HUD del juego o en el menú, sin cortar la partida.
+# Flujo de trabajo
+
+El repositorio se trabajó con una rama por integrante (`jazmin` y `octavio`) y la integración final en `main` mediante merges. La entrega no incluye versiones anteriores ni carpetas duplicadas: el proyecto Maven está directamente en la raíz.
 
 # Capturas
 
@@ -175,3 +146,5 @@ Las pantallas del juego están renderizadas a 3x (1152x720) desde el lienzo de 3
 | ![Almacén](docs/almacen.png) | ![Cuaderno](docs/cuaderno.png) |
 | ![Pausa](docs/pausa.png) | ![Fin de jornada](docs/findia.png) |
 | ![Derrota](docs/derrota.png) | ![Menú de partidas](docs/menu.png) |
+| ![Formulario de alta](docs/form.png) | ![Registro exitoso](docs/registro.png) |
+| ![Confirmación de borrado](docs/borrar.png) | ![Error de excepción](docs/error.png) |

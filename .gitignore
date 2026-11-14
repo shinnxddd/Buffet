@@ -22,3 +22,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Entregas comprimidas (el repositorio no se entrega en .zip)
+*.zip
+
+# Carpeta de referencia de la versión de consola (no forma parte de la entrega)
+referencia-consola/

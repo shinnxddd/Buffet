@@ -2,6 +2,7 @@ package service;
 
 import excepciones.InteraccionInvalidaException;
 import excepciones.ObjetoNoDisponibleException;
+import excepciones.PedidoInvalidoException;
 import excepciones.TareaNoDisponibleException;
 import modelo.Cliente;
 import modelo.Herramienta;
@@ -208,7 +209,7 @@ public class JuegoService {
     }
 
     /** Tercer paso: entregar la bandeja correcta al cliente del mostrador. */
-    public String entregarPedido() throws InteraccionInvalidaException {
+    public String entregarPedido() throws InteraccionInvalidaException, PedidoInvalidoException {
         if (sala != Sala.COMEDOR) {
             throw new InteraccionInvalidaException("El cliente te espera en el mostrador del comedor.");
         }
@@ -220,7 +221,7 @@ public class JuegoService {
             throw new InteraccionInvalidaException("Primero tomale el pedido a " + c.getNombre() + ".");
         }
         if (!esBandejaPara(enMano, c)) {
-            throw new InteraccionInvalidaException("Necesitás la bandeja con " + c.getPedido()
+            throw new PedidoInvalidoException("Necesitás la bandeja con " + c.getPedido()
                     + ". Preparala en la cocina.");
         }
         drenaje();

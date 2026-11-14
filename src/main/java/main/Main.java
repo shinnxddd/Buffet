@@ -6,8 +6,7 @@ import ui.VentanaPrincipal;
 import javax.swing.SwingUtilities;
 
 /**
- * Punto de entrada: abre la ventana gráfica. (La versión de consola quedó en
- * referencia-consola/.)
+ * Punto de entrada: abre la ventana gráfica del juego.
  */
 public class Main {
 
