@@ -1,0 +1,24 @@
+# Maven / compilados
+target/
+*.class
+*.jar
+
+# Configuración local (datos de la base de cada integrante)
+config.properties
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+nbproject/
+out/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
