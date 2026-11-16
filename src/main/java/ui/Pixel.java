@@ -1,20 +1,23 @@
 package ui;
 
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Utilidades de dibujo para la pantalla de juego: fuente pixel, paneles, barras y texto.
+ * Utilidades de dibujo para la pantalla de juego: fuentes, paneles, barras y texto.
  * Todo se dibuja sin antialias y en coordenadas enteras para que cada píxel quede nítido.
+ *
+ * Toda la interfaz usa VT323: conserva el aspecto pixel art y distingue bien cada
+ * carácter incluso en tamaños pequeños. El texto se dibuja sin suavizado para mantener
+ * los bordes nítidos al escalar el lienzo.
  */
 public final class Pixel {
 
-    // Un punto más que antes en los tamaños chicos: en 384x240 cada píxel cuenta
-    // y la letra de 6 px se volvía difícil de leer sobre el arte.
-    public static final int T_CHICO = 7;
-    public static final int T_CUERPO = 9;
+    public static final int T_CHICO = 9;
+    public static final int T_CUERPO = 11;
     public static final int T_SUBTITULO = 13;
     public static final int T_TITULO = 18;
     public static final int T_GRANDE = 26;
@@ -36,8 +39,9 @@ public final class Pixel {
     public static final Color VERDE_OSCURO = new Color(0x3F6B52);
     public static final Color AZUL = new Color(0x6D8FA8);
 
-    private static final Font REGULAR = cargar("Silkscreen-Regular.ttf");
-    private static final Font NEGRITA = cargar("Silkscreen-Bold.ttf");
+    private static final Font DISPLAY = cargar("VT323-Regular.ttf");
+    private static final Font DISPLAY_NEGRITA = DISPLAY.deriveFont(Font.BOLD);
+    private static final Font TEXTO = cargar("VT323-Regular.ttf");
 
     private Pixel() { }
 
@@ -61,8 +65,19 @@ public final class Pixel {
         g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
     }
 
+    /** Fuente de cuerpo: legible incluso a 9 px. */
+    public static Font fuenteTexto(int tam) {
+        return TEXTO.deriveFont((float) tam);
+    }
+
+    /** Fuente de títulos y carteles. Solo conviene usarla desde 13 px. */
+    public static Font fuenteDisplay(int tam, boolean negrita) {
+        return (negrita ? DISPLAY_NEGRITA : DISPLAY).deriveFont((float) tam);
+    }
+
+    /** Elige automáticamente la familia según el tamaño. */
     public static Font fuente(int tam, boolean negrita) {
-        return (negrita ? NEGRITA : REGULAR).deriveFont((float) tam);
+        return tam >= T_SUBTITULO ? fuenteDisplay(tam, negrita) : fuenteTexto(tam);
     }
 
     public static void texto(Graphics2D g, String texto, int x, int y, int tam, Color color) {
@@ -74,6 +89,23 @@ public final class Pixel {
             return;
         }
         g.setFont(fuente(tam, negrita));
+        g.setColor(color);
+        String[] lineas = texto.split("\n", -1);
+        int alto = altoLinea(tam);
+        for (int i = 0; i < lineas.length; i++) {
+            g.drawString(lineas[i], x, y + i * alto);
+        }
+    }
+
+    public static void textoDisplay(Graphics2D g, String texto, int x, int y, int tam, Color color) {
+        textoDisplay(g, texto, x, y, tam, color, false);
+    }
+
+    public static void textoDisplay(Graphics2D g, String texto, int x, int y, int tam, Color color, boolean negrita) {
+        if (texto == null || texto.isEmpty()) {
+            return;
+        }
+        g.setFont(fuenteDisplay(tam, negrita));
         g.setColor(color);
         String[] lineas = texto.split("\n", -1);
         int alto = altoLinea(tam);
@@ -94,6 +126,14 @@ public final class Pixel {
         texto(g, texto, centroX - ancho(g, texto, tam, negrita) / 2, y, tam, color, negrita);
     }
 
+    public static void textoCentradoDisplay(Graphics2D g, String texto, int centroX, int y, int tam, Color color,
+                                            boolean negrita) {
+        if (texto == null) {
+            return;
+        }
+        textoDisplay(g, texto, centroX - anchoDisplay(g, texto, tam, negrita) / 2, y, tam, color, negrita);
+    }
+
     public static void textoDerecha(Graphics2D g, String texto, int derechaX, int y, int tam, Color color) {
         textoDerecha(g, texto, derechaX, y, tam, color, false);
     }
@@ -101,6 +141,11 @@ public final class Pixel {
     public static void textoDerecha(Graphics2D g, String texto, int derechaX, int y, int tam, Color color,
                                     boolean negrita) {
         texto(g, texto, derechaX - ancho(g, texto, tam, negrita), y, tam, color, negrita);
+    }
+
+    public static void textoDerechaDisplay(Graphics2D g, String texto, int derechaX, int y, int tam, Color color,
+                                           boolean negrita) {
+        textoDisplay(g, texto, derechaX - anchoDisplay(g, texto, tam, negrita), y, tam, color, negrita);
     }
 
     /** Texto con contorno de un píxel: clave para que se lea sobre el arte. */
@@ -132,8 +177,21 @@ public final class Pixel {
         return maximo;
     }
 
+    public static int anchoDisplay(Graphics2D g, String texto, int tam, boolean negrita) {
+        if (texto == null || texto.isEmpty()) {
+            return 0;
+        }
+        g.setFont(fuenteDisplay(tam, negrita));
+        FontMetrics fm = g.getFontMetrics();
+        int maximo = 0;
+        for (String linea : texto.split("\n", -1)) {
+            maximo = Math.max(maximo, fm.stringWidth(linea));
+        }
+        return maximo;
+    }
+
     public static int altoLinea(int tam) {
-        return tam + 2;
+        return tam + (tam >= T_SUBTITULO ? 4 : 2);
     }
 
     /** Corta una línea con puntos suspensivos si no entra en el ancho dado. */
@@ -152,8 +210,27 @@ public final class Pixel {
         return texto.substring(0, Math.max(0, i)).stripTrailing() + puntos;
     }
 
+    public static String recortarDisplay(Graphics2D g, String texto, int maxAncho, int tam, boolean negrita) {
+        if (texto == null) {
+            return "";
+        }
+        if (anchoDisplay(g, texto, tam, negrita) <= maxAncho) {
+            return texto;
+        }
+        String puntos = "...";
+        int i = texto.length();
+        while (i > 0 && anchoDisplay(g, texto.substring(0, i) + puntos, tam, negrita) > maxAncho) {
+            i--;
+        }
+        return texto.substring(0, Math.max(0, i)).stripTrailing() + puntos;
+    }
+
     /** Divide un texto en líneas que entren en el ancho indicado. */
     public static List<String> envolver(Graphics2D g, String texto, int maxAncho, int tam) {
+        return envolver(g, texto, maxAncho, tam, false);
+    }
+
+    public static List<String> envolver(Graphics2D g, String texto, int maxAncho, int tam, boolean negrita) {
         List<String> salida = new ArrayList<>();
         if (texto == null || texto.isBlank()) {
             return salida;
@@ -163,7 +240,7 @@ public final class Pixel {
             StringBuilder linea = new StringBuilder();
             for (String palabra : palabras) {
                 String prueba = linea.isEmpty() ? palabra : linea + " " + palabra;
-                if (ancho(g, prueba, tam) <= maxAncho || linea.isEmpty()) {
+                if (ancho(g, prueba, tam, negrita) <= maxAncho || linea.isEmpty()) {
                     linea.setLength(0);
                     linea.append(prueba);
                 } else {
@@ -213,17 +290,25 @@ public final class Pixel {
         panel(g, x, y, w, h, new Color(0x0E1512), BORDE);
     }
 
-    /** Barra segmentada de pixel art. */
+    /** Barra segmentada de pixel art. El último segmento llega justo al borde interno. */
     public static void barra(Graphics2D g, int x, int y, int w, int h, int valor, int maximo,
                              Color relleno, Color fondo, Color borde) {
         g.setColor(fondo);
         g.fillRect(x, y, w, h);
         int segmentos = Math.max(1, w / 7);
-        int ancho = Math.max(1, (w - 2) / segmentos);
-        int llenos = (int) Math.round((double) Math.max(0, Math.min(maximo, valor)) / maximo * segmentos);
+        int interior = Math.max(1, w - 2);
+        int base = interior / segmentos;
+        int extra = interior % segmentos;
+        int llenos = maximo <= 0 ? 0
+                : (int) Math.round((double) Math.max(0, Math.min(maximo, valor)) / maximo * segmentos);
+        int cursor = x + 1;
         for (int i = 0; i < segmentos; i++) {
+            int anchoSeg = base + (i < extra ? 1 : 0);
             g.setColor(i < llenos ? relleno : new Color(0x1E2A24));
-            g.fillRect(x + 1 + i * ancho, y + 1, Math.max(1, ancho - 1), h - 2);
+            if (anchoSeg > 1 && h > 2) {
+                g.fillRect(cursor, y + 1, anchoSeg - 1, h - 2);
+            }
+            cursor += anchoSeg;
         }
         g.setColor(borde);
         g.drawRect(x, y, w - 1, h - 1);
@@ -277,8 +362,9 @@ public final class Pixel {
             g.fillRect(x, y, 2, h);
             g.fillRect(x, y, w, 1);
         }
-        textoCentrado(g, etiqueta, x + w / 2, y + (h + T_CUERPO) / 2 - 1, T_CUERPO,
-                elegido ? CREMA : GRIS, elegido);
+        String corta = recortar(g, etiqueta, w - 8, T_CUERPO, false);
+        textoCentrado(g, corta, x + w / 2, y + (h + T_CUERPO) / 2 - 1, T_CUERPO,
+                elegido ? CREMA : GRIS);
     }
 
     /** Oscurece con un patrón de tablero de ajedrez para dar volumen sin degradés suaves. */
@@ -297,5 +383,94 @@ public final class Pixel {
         for (int y = 0; y < alto; y += 3) {
             g.fillRect(0, y, ancho, 1);
         }
+    }
+
+    /**
+     * Posición y escala entera del lienzo dentro de la ventana. La escala entera evita
+     * píxeles deformados; el centrado reparte los márgenes sobrantes.
+     */
+    public record Encuadre(int escala, int x, int y, int ancho, int alto) {
+        public boolean contiene(int mx, int my) {
+            return mx >= x && mx < x + ancho && my >= y && my < y + alto;
+        }
+
+        public int lienzoX(int mx) {
+            return (mx - x) / escala;
+        }
+
+        public int lienzoY(int my) {
+            return (my - y) / escala;
+        }
+    }
+
+    public static Encuadre calcularLienzo(int ventanaAncho, int ventanaAlto, int lienzoAncho, int lienzoAlto) {
+        int escala = Math.max(1, Math.min(ventanaAncho / lienzoAncho, ventanaAlto / lienzoAlto));
+        int ancho = lienzoAncho * escala;
+        int alto = lienzoAlto * escala;
+        return new Encuadre(escala, (ventanaAncho - ancho) / 2, (ventanaAlto - alto) / 2, ancho, alto);
+    }
+
+    /**
+     * Dibuja el lienzo en pantalla completa: un fondo de textura oscura ocupa todo el
+     * monitor y el lienzo nítido queda centrado con un marco. Así no aparecen franjas
+     * negras muertas ni copias gigantes de la interfaz en 1920x1080.
+     */
+    public static void pintarPantalla(Graphics2D g, BufferedImage lienzo, int ventanaAncho, int ventanaAlto) {
+        g.setColor(NEGRO);
+        g.fillRect(0, 0, ventanaAncho, ventanaAlto);
+        if (lienzo == null || ventanaAncho <= 0 || ventanaAlto <= 0) {
+            return;
+        }
+        // Textura de tablero muy tenue: da profundidad sin repetir el contenido.
+        g.setPaint(texturaFondo());
+        g.fillRect(0, 0, ventanaAncho, ventanaAlto);
+        g.setPaint(null);
+
+        // Viñeta en tiras: más oscura hacia los bordes del monitor.
+        for (int i = 0; i < 16; i++) {
+            g.setColor(new Color(0, 0, 0, 64 - i * 3));
+            g.fillRect(0, i * 4, ventanaAncho, 4);
+            g.fillRect(0, ventanaAlto - 4 - i * 4, ventanaAncho, 4);
+            g.fillRect(i * 8, 0, 8, ventanaAlto);
+            g.fillRect(ventanaAncho - 8 - i * 8, 0, 8, ventanaAlto);
+        }
+
+        Encuadre encuadre = calcularLienzo(ventanaAncho, ventanaAlto, lienzo.getWidth(), lienzo.getHeight());
+        int x = encuadre.x();
+        int y = encuadre.y();
+        int w = encuadre.ancho();
+        int h = encuadre.alto();
+        g.setColor(new Color(0, 0, 0, 190));
+        g.fillRect(x - 10, y - 10, w + 20, h + 20);
+        g.setColor(new Color(0x0B1411));
+        g.fillRect(x - 4, y - 4, w + 8, h + 8);
+        g.setColor(BORDE);
+        g.drawRect(x - 4, y - 4, w + 7, h + 7);
+        g.setColor(new Color(255, 255, 255, 18));
+        g.drawLine(x - 3, y - 3, x + w + 2, y - 3);
+        g.drawImage(lienzo, x, y, w, h, null);
+    }
+
+    private static TexturePaint texturaFondo;
+
+    private static TexturePaint texturaFondo() {
+        if (texturaFondo == null) {
+            BufferedImage tile = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
+            Graphics2D tg = tile.createGraphics();
+            tg.setColor(new Color(0x050807));
+            tg.fillRect(0, 0, 8, 8);
+            tg.setColor(new Color(0x07100D));
+            tg.fillRect(0, 0, 4, 4);
+            tg.fillRect(4, 4, 4, 4);
+            tg.setColor(new Color(0x060B09));
+            tg.fillRect(4, 0, 4, 4);
+            tg.fillRect(0, 4, 4, 4);
+            tg.setColor(new Color(0x0A1411));
+            tg.fillRect(0, 0, 1, 1);
+            tg.fillRect(4, 4, 1, 1);
+            tg.dispose();
+            texturaFondo = new TexturePaint(tile, new Rectangle(0, 0, 8, 8));
+        }
+        return texturaFondo;
     }
 }

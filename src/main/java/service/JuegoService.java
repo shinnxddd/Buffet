@@ -9,6 +9,7 @@ import modelo.Herramienta;
 import modelo.Inventario;
 import modelo.Jugador;
 import modelo.Lugar;
+import modelo.NPC;
 import modelo.Objeto;
 import modelo.Sala;
 import modelo.Tarea;
@@ -32,6 +33,8 @@ public class JuegoService {
     public static final int CORDURA_MINIMA_DIA = 30;
     /** Lo que recuperás al dormir entre jornadas. */
     public static final int RECUPERACION_DIARIA = 8;
+    /** Cada cuánto la presión del turno desgasta cordura mientras haya trabajo pendiente. */
+    public static final long INTERVALO_PRESION_MS = 12_000;
 
     private static final int MAX_CLIENTES = 12;
     private static final int MAX_TAREAS = 7;
@@ -41,10 +44,13 @@ public class JuegoService {
     private final List<Cliente> clientes = new ArrayList<>();
     private final List<Tarea> tareas = new ArrayList<>();
     private final Inventario inventario = new Inventario();
+    private final NPC conserje = new NPC(900, "el conserje", "conserje del turno noche",
+            "Si la luz se va, no corras: el pasillo cambia de lugar.", true);
 
     private Sala sala = Sala.COMEDOR;
     private Objeto enMano;            // bandeja o herramienta: una sola cosa a la vez
     private boolean perdida;
+    private boolean conserjeHablado;
     private String causaPerdida;
 
     public JuegoService(Jugador jugador) {
@@ -94,6 +100,68 @@ public class JuegoService {
         return causaPerdida;
     }
 
+    public NPC getConserje() {
+        return conserje;
+    }
+
+    // ---------------------------------------------------------------- presión
+
+    /**
+     * Peso del trabajo que sigue abierto: cada cliente esperando suma uno y cada tarea
+     * pendiente suma su prioridad. La presión no se guarda en la base: se deriva del estado.
+     */
+    public int presionPendiente() {
+        int pendientes = (int) clientes.stream().filter(c -> !c.isAtendido()).count();
+        int peso = tareas.stream().filter(t -> !t.isCompletada())
+                .mapToInt(Tarea::getPrioridad).sum();
+        return pendientes + peso;
+    }
+
+    /** 0 = tranquilo, 1 = leve, 2 = tensa, 3 = alta, 4 = crítica. */
+    public int nivelPresion() {
+        int peso = presionPendiente();
+        if (peso <= 0) {
+            return 0;
+        }
+        if (peso <= 3) {
+            return 1;
+        }
+        if (peso <= 7) {
+            return 2;
+        }
+        if (peso <= 12) {
+            return 3;
+        }
+        return 4;
+    }
+
+    public String getPresionEtiqueta() {
+        return switch (nivelPresion()) {
+            case 1 -> "LEVE";
+            case 2 -> "TENSA";
+            case 3 -> "ALTA";
+            case 4 -> "CRÍTICA";
+            default -> "TRANQUILA";
+        };
+    }
+
+    /**
+     * Latido pasivo de la jornada. La interfaz lo llama cada {@link #INTERVALO_PRESION_MS}
+     * solo mientras se está jugando. Devuelve el daño aplicado (0 si no había presión).
+     */
+    public int latidoPresion() {
+        if (perdida || turnoTerminado()) {
+            return 0;
+        }
+        int nivel = nivelPresion();
+        if (nivel <= 0) {
+            return 0;
+        }
+        int dano = nivel >= 4 ? 2 : 1;
+        restarCordura(dano);
+        return dano;
+    }
+
     // ---------------------------------------------------------------- progreso
 
     public Cliente clienteActual() {
@@ -139,19 +207,40 @@ public class JuegoService {
         return !hayClientePendiente() && !hayTareaPendiente();
     }
 
+    /** La tarea pendiente más peligrosa; la usa el HUD y el conserje. */
+    public Tarea tareaMasUrgente() {
+        return tareas.stream()
+                .filter(t -> !t.isCompletada())
+                .max((a, b) -> {
+                    int cmp = Integer.compare(a.getPrioridad(), b.getPrioridad());
+                    return cmp != 0 ? cmp : Integer.compare(b.getId(), a.getId());
+                })
+                .orElse(null);
+    }
+
     /** Frase corta para la barra de objetivos de la interfaz. */
     public String getPista() {
+        Tarea tablero = tareaPendienteEn(Lugar.TABLERO);
+        if (tablero != null) {
+            if (tieneHerramientaPara(Lugar.TABLERO)) {
+                return "Sin luz. Cambiá el fusible en el tablero del comedor.";
+            }
+            if (tieneHerramientaGuardada(Lugar.TABLERO)) {
+                return "Tenés el fusible en la mochila. Equipalo con I.";
+            }
+            return "Sin luz. Buscá un fusible en el almacén.";
+        }
         Cliente c = clienteActual();
         if (c != null) {
             if (!c.isPedidoTomado()) {
-                return "Tomale el pedido a " + c.getNombre() + " en el mostrador.";
+                return "Tomale el pedido " + aQuien(c) + " en el mostrador.";
             }
             if (tieneBandejaPara(c)) {
-                return "Llevale la bandeja con " + c.getPedido() + " a " + c.getNombre() + ".";
+                return "Llevale la bandeja con " + c.getPedido() + " " + aQuien(c) + ".";
             }
             return "Prepará " + c.getPedido() + " en la mesada de la cocina.";
         }
-        Tarea t = tareas.stream().filter(x -> !x.isCompletada()).findFirst().orElse(null);
+        Tarea t = tareaMasUrgente();
         if (t != null) {
             String extra = "";
             if (t.requiereHerramienta() && !tieneHerramientaPara(t.getLugar())) {
@@ -175,7 +264,7 @@ public class JuegoService {
             throw new InteraccionInvalidaException("No hay nadie esperando en el mostrador.");
         }
         if (c.isPedidoTomado()) {
-            throw new InteraccionInvalidaException("Ya le tomaste el pedido a " + c.getNombre()
+            throw new InteraccionInvalidaException("Ya le tomaste el pedido " + aQuien(c)
                     + ". Ahora hay que prepararlo.");
         }
         drenaje();
@@ -194,7 +283,7 @@ public class JuegoService {
             throw new InteraccionInvalidaException("No hay ningún pedido pendiente en el mostrador.");
         }
         if (!c.isPedidoTomado()) {
-            throw new InteraccionInvalidaException("Todavía no le tomaste el pedido a " + c.getNombre() + ".");
+            throw new InteraccionInvalidaException("Todavía no le tomaste el pedido " + aQuien(c) + ".");
         }
         if (enMano != null) {
             if (esBandejaPara(enMano, c)) {
@@ -218,7 +307,7 @@ public class JuegoService {
             throw new InteraccionInvalidaException("No hay nadie esperando en el mostrador.");
         }
         if (!c.isPedidoTomado()) {
-            throw new InteraccionInvalidaException("Primero tomale el pedido a " + c.getNombre() + ".");
+            throw new InteraccionInvalidaException("Primero tomale el pedido " + aQuien(c) + ".");
         }
         if (!esBandejaPara(enMano, c)) {
             throw new PedidoInvalidoException("Necesitás la bandeja con " + c.getPedido()
@@ -228,7 +317,7 @@ public class JuegoService {
         c.marcarAtendido();
         enMano = null;
         sumarCordura(6);
-        return "Le entregaste " + c.getPedido() + " " + aQuien(c) + " y se fue conforme. +5 de cordura.";
+        return "Le entregaste " + c.getPedido() + " " + aQuien(c) + " y se fue conforme. +6 de cordura.";
     }
 
     public boolean tieneBandejaPara(Cliente c) {
@@ -277,7 +366,8 @@ public class JuegoService {
         drenaje();
         tarea.setCompletada(true);
         jugador.sumarTareaCompletada();
-        sumarCordura(4);
+        int recuperacion = 2 + tarea.getPrioridad();
+        sumarCordura(recuperacion);
 
         String mensaje = tarea.getMensajeExito();
         Objeto premio = tarea.getRecompensa();
@@ -285,7 +375,7 @@ public class JuegoService {
             inventario.agregar(premio);
             mensaje += " Encontraste " + premio.getNombre() + " y lo guardaste en la mochila.";
         }
-        return mensaje + " +3 de cordura.";
+        return mensaje + " +" + recuperacion + " de cordura.";
     }
 
     /** Se lleva una herramienta del estante del almacén (queda en la mano). */
@@ -317,6 +407,47 @@ public class JuegoService {
 
     public boolean tieneHerramientaPara(Lugar lugar) {
         return enMano instanceof Herramienta && ((Herramienta) enMano).sirvePara(lugar);
+    }
+
+    /** La herramienta está en la mochila, todavía sin equipar. */
+    public boolean tieneHerramientaGuardada(Lugar lugar) {
+        return inventario.getObjetos().stream()
+                .anyMatch(o -> o instanceof Herramienta && ((Herramienta) o).sirvePara(lugar));
+    }
+
+    /** La linterna del tablero sirve para atravesar un apagón. */
+    public boolean tieneLinterna() {
+        if (enMano != null && enMano.getNombre().toLowerCase().contains("linterna")) {
+            return true;
+        }
+        return inventario.getObjetos().stream()
+                .anyMatch(o -> o.getNombre().toLowerCase().contains("linterna"));
+    }
+
+    /**
+     * El conserje del almacén es el único que habla del apagón sin gritar. Da una pista
+     * sobre la tarea más urgente y, una vez por día, un poco de calma.
+     */
+    public String hablarConConserje() throws InteraccionInvalidaException {
+        if (sala != Sala.ALMACEN) {
+            throw new InteraccionInvalidaException("El conserje espera junto a los estantes del almacén.");
+        }
+        Tarea urgente = tareaMasUrgente();
+        StringBuilder mensaje = new StringBuilder();
+        mensaje.append(conserje.getNombre()).append(" (").append(conserje.getRol()).append("): \"")
+                .append(conserje.getDialogo()).append("\"");
+        if (conserje.isPuedeDarTarea() && urgente != null) {
+            mensaje.append(" Lo más urgente: ").append(urgente.getTitulo())
+                    .append(" en ").append(urgente.getLugar().getEtiqueta()).append(".");
+        } else if (conserje.isPuedeDarTarea()) {
+            mensaje.append(" No queda nada pendiente. Cerrá la caja y andá a dormir.");
+        }
+        if (!conserjeHablado) {
+            conserjeHablado = true;
+            sumarCordura(2);
+            mensaje.append(" Te quedás un momento en silencio. +2 de cordura.");
+        }
+        return mensaje.toString();
     }
 
     /** El nombre de la herramienta que pide un lugar (aunque no la tengas). */
@@ -464,8 +595,8 @@ public class JuegoService {
 
     private void prepararDia() {
         clientes.clear();
-        tareas.clear();
         int dia = Math.max(1, jugador.getDiaActual());
+        conserjeHablado = false;
 
         int cantidadClientes = Math.min(MAX_CLIENTES, 4 + dia);
         List<Perfil> perfiles = new ArrayList<>(List.of(PERFILES));
@@ -475,12 +606,37 @@ public class JuegoService {
             clientes.add(new Cliente(i + 1, p.nombre(), p.pedido(), p.respuestas()));
         }
 
-        int cantidadTareas = Math.min(MAX_TAREAS, 3 + dia);
-        List<Lugar> lugares = new ArrayList<>(List.of(Lugar.values()));
-        Collections.shuffle(lugares, azar);
-        for (int i = 0; i < cantidadTareas; i++) {
-            tareas.add(crearTarea(lugares.get(i), dia, i + 1));
+        // Las tareas no se borran al dormir: lo que quedó pendiente sigue ahí y presiona.
+        tareas.removeIf(Tarea::isCompletada);
+        int objetivoBase = Math.min(MAX_TAREAS, 2 + (dia + 1) / 2);
+        int objetivo = Math.max(2, Math.min(MAX_TAREAS, objetivoBase + azar.nextInt(5) - 2));
+        if (dia == 1 && !hayTareaPendiente(Lugar.TABLERO)) {
+            tareas.add(crearTarea(Lugar.TABLERO, dia, siguienteNumero(dia)));
         }
+        List<Lugar> libres = new ArrayList<>();
+        for (Lugar lugar : Lugar.values()) {
+            if (tareas.stream().noneMatch(t -> t.getLugar() == lugar)) {
+                libres.add(lugar);
+            }
+        }
+        Collections.shuffle(libres, azar);
+        for (Lugar lugar : libres) {
+            if (tareas.size() >= objetivo) {
+                break;
+            }
+            tareas.add(crearTarea(lugar, dia, siguienteNumero(dia)));
+        }
+    }
+
+    /** Los ids no se repiten aunque una tarea vieja siga pendiente. */
+    private int siguienteNumero(int dia) {
+        for (int numero = 1; numero < 100; numero++) {
+            final int candidato = numero;
+            if (tareas.stream().noneMatch(t -> t.getId() == dia * 100 + candidato)) {
+                return candidato;
+            }
+        }
+        return 1;
     }
 
     private Tarea crearTarea(Lugar lugar, int dia, int numero) {
@@ -488,46 +644,53 @@ public class JuegoService {
         Herramienta herramienta = herramientaPara(lugar);
         switch (lugar) {
             case BANO:
-                return new Tarea(id, "el baño está sucio y el piso brilla de una forma rara", dia, false, lugar,
-                        "El baño no se seca", "Trapeaste el piso. El agua volvió a aparecer detrás tuyo.",
+                return new Tarea(id, "el piso del baño vuelve a llenarse de agua", dia, false, lugar,
+                        "El baño no se seca",
+                        "Trapeaste el piso. El agua vuelve a aparecer detrás tuyo, pero el espejo te deja pasar.",
                         new Objeto(701, "un jabón de hotel", "JABON", true, 5,
                                 "Te lavaste la cara. Por un segundo el espejo te devolvió tu reflejo."),
-                        herramienta);
+                        herramienta, 1, "El piso sigue brillando y te resbalás en cada pasada.");
             case MESAS:
                 return new Tarea(id, "las mesas quedaron pegajosas y con restos de comida", dia, false, lugar,
-                        "Mesas pegajosas", "Dejaste las mesas relucientes. Debajo de un plato había una propina.",
+                        "Mesas pegajosas",
+                        "Dejaste las mesas relucientes. Debajo de un plato había una propina.",
                         new Objeto(702, "una propina", "MONEDA", true, 6,
                                 "Te compraste un alfajor con la propina. Sabe a plástico."),
-                        herramienta);
+                        herramienta, 2, "Los clientes comen de pie y te miran con fastidio.");
             case BASURA:
                 return new Tarea(id, "la bolsa de basura está por explotar y hay moscas por todos lados", dia, false, lugar,
-                        "La basura vive", "Barriste la basura al patio. No mires hacia atrás.",
+                        "La basura vive",
+                        "Barriste la basura al patio. No mires hacia atrás.",
                         new Objeto(703, "una nota arrugada", "NOTA", true, -6,
                                 "Dice: \"NO LE DES NADA AL ÚLTIMO CLIENTE\". La letra es tuya."),
-                        herramienta);
+                        herramienta, 2, "Las moscas llenan el comedor y no te dejan pensar.");
             case TABLERO:
                 return new Tarea(id, "el tablero de luz chispea y las luces parpadean solas", dia, false, lugar,
-                        "Cortocircuito", "Cambiaste el fusible. La luz vuelve a ser estable. Había una linterna en el cajón.",
+                        "Cortocircuito",
+                        "Cambiaste el fusible. La luz vuelve a ser estable. Había una linterna en el cajón.",
                         new Objeto(704, "una linterna", "HERRAMIENTA", true, 7,
                                 "Alumbra rincones donde antes no te animabas a mirar."),
-                        herramienta);
+                        herramienta, 3, "El buffet queda a oscuras y el miedo crece en cada rincón.");
             case PLANCHA:
                 return new Tarea(id, "la plancha está llena de grasa quemada y larga un humo raro", dia, false, lugar,
-                        "La plancha humea", "Raspaste la plancha hasta que quedó como espejo. Algo brilló en la grasa.",
+                        "La plancha humea",
+                        "Raspaste la plancha hasta que quedó como espejo. Algo brilló en la grasa.",
                         new Objeto(705, "una llave oxidada", "LLAVE", false),
-                        herramienta);
+                        herramienta, 2, "El humo tapa la cocina y te cuesta respirar.");
             case CAFETERA:
                 return new Tarea(id, "la cafetera gotea algo oscuro que no parece café", dia, false, lugar,
-                        "Goteo negro", "Ajustaste la cafetera y salió un café perfecto.",
+                        "Goteo negro",
+                        "Ajustaste la cafetera y salió un café perfecto.",
                         new Objeto(706, "un café recién hecho", "BEBIDA", true, 10,
                                 "Está caliente y por un rato todo parece normal."),
-                        herramienta);
+                        herramienta, 2, "El líquido se mezcla con algo que se mueve solo.");
             case HELADERA:
             default:
                 return new Tarea(id, "la heladera quedó abierta y hay bebidas tiradas por el piso", dia, false, lugar,
-                        "La heladera no cierra", "Acomodaste todo y cerraste la heladera. Se salvó una gaseosa.",
+                        "La heladera no cierra",
+                        "Acomodaste todo y cerraste la heladera. Se salvó una gaseosa.",
                         new Objeto(707, "una gaseosa fría", "BEBIDA", true, 9, "Qué alivio."),
-                        herramienta);
+                        herramienta, 2, "El frío se escapa y las bebidas ruedan por el piso.");
         }
     }
 
