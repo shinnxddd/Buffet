@@ -36,9 +36,4 @@ public class Jugador extends Personaje {
     public void sumarTareaCompletada() {
         this.tareasCompletadas++;
     }
-
-    @Override
-    public String getTipo() {
-        return "JUGADOR";
-    }
 }

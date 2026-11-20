@@ -25,11 +25,4 @@ public abstract class Mundo {
     public void setNombre(String nombre) {
         this.nombre = nombre;
     }
-
-    public abstract String getTipo();
-
-    @Override
-    public String toString() {
-        return getTipo() + " #" + id + " [" + nombre + "]";
-    }
 }

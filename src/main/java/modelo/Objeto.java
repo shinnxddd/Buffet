@@ -1,8 +1,6 @@
 package modelo;
 
-import interfaces.Interactuable;
-
-public class Objeto extends Mundo implements Interactuable {
+public class Objeto extends Mundo {
 
     private String tipoObjeto;
     private boolean utilizable;
@@ -35,19 +33,5 @@ public class Objeto extends Mundo implements Interactuable {
 
     public String getMensajeUso() {
         return mensajeUso;
-    }
-
-    @Override
-    public String getTipo() {
-        return "OBJETO";
-    }
-
-    @Override
-    public void interactuar() {
-        if (!utilizable) {
-            System.out.println(nombre + " no se puede usar ahora mismo.");
-            return;
-        }
-        System.out.println("Usaste " + nombre + ".");
     }
 }

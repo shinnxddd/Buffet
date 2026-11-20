@@ -16,7 +16,7 @@ import java.util.List;
 public class PartidaService {
 
     private static final int LARGO_MAX_NOMBRE = 50;   // VARCHAR(50) en la tabla
-    private static final int CORDURA_INICIAL = 100;   // igual que el Main de consola
+    private static final int CORDURA_INICIAL = 100;   // con la que arranca una partida nueva
 
     private final EntidadDAO dao = new JugadorDAO();
 

@@ -5,6 +5,7 @@ import modelo.Herramienta;
 import modelo.Lugar;
 import modelo.Objeto;
 import modelo.Sala;
+import modelo.Tarea;
 import service.JuegoService;
 
 import java.awt.*;
@@ -15,22 +16,41 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.function.Consumer;
 
 /**
- * El buffet dibujado en pixel art sobre un lienzo interno de 384x240. Se encarga del movimiento,
- * las puertas, las partículas y la iluminación. La interfaz y los diálogos viven en PantallaJuego.
+ * El buffet dibujado en pixel art sobre un lienzo interno de 384x240. Se
+ * encarga del movimiento,
+ * las puertas, las partículas y la iluminación. La interfaz y los diálogos
+ * viven en PantallaJuego.
  */
 public class EscenaBuffet {
 
-    public record Zona(String id, String etiqueta, Sala sala, Rectangle area) { }
+    public record Zona(String id, String etiqueta, Sala sala, Rectangle area) {
+    }
 
     public static final int ANCHO = 384;
     public static final int ALTO = 240;
 
     private static final int HORIZONTE = 84;
-    private static final double VELOCIDAD = 1.15;
+    /**
+     * Caminando se llega cómodo a cualquier sala; con Shift se cruza el buffet
+     * corriendo.
+     */
+    private static final double VELOCIDAD = 1.7;
+    private static final double VELOCIDAD_CORRER = 2.9;
+    /** La carrera gasta aguante; sin aguante se vuelve a caminar. */
+    private static final double STAMINA_MAXIMA = 100;
+    private static final double GASTE_STAMINA = 0.55;
+    private static final double REGENERACION_STAMINA = 0.10;
+    private static final int ESPERA_STAMINA = 45;
     private static final double DISTANCIA = 28;
+    /** Los pies pueden llegar hasta el borde inferior del comedor. */
+    private static final int PISO_MAXIMO = ALTO - 3;
+
+    private static final int SOMBRAS_APAGON = 3;
+    private static final double VELOCIDAD_SOMBRA = 0.38;
+    private static final double DISTANCIA_GOLPE = 11;
+    private static final int ESPERA_GOLPE = 90;
 
     private static final Color PARED = new Color(0x22352D);
     private static final Color PARED_CLARA = new Color(0x2C4339);
@@ -39,7 +59,6 @@ public class EscenaBuffet {
     private static final Color ZOCALO_CLARO = new Color(0x6B4E32);
     private static final Color PISO_A = new Color(0x3A3B33);
     private static final Color PISO_B = new Color(0x2F3029);
-    private static final Color PISO_C = new Color(0x46473D);
     private static final Color MADERA = new Color(0x6B4E32);
     private static final Color MADERA_CLARA = new Color(0x8A6844);
     private static final Color MADERA_OSCURA = new Color(0x3E2C1D);
@@ -67,11 +86,13 @@ public class EscenaBuffet {
         ZONAS.put(Sala.BANO, List.of(
                 new Zona("tarea:BANO", "Trapear el baño", Sala.BANO, new Rectangle(126, 130, 130, 76))));
 
+        // Cada estación es la única salida del pedido que le corresponde: primero se
+        // repara
+        // si está rota y después se retira la bandeja directamente de ella.
         ZONAS.put(Sala.COCINA, List.of(
-                new Zona("preparar", "Preparar el pedido", Sala.COCINA, new Rectangle(236, 62, 84, 54)),
-                new Zona("tarea:PLANCHA", "Limpiar la plancha", Sala.COCINA, new Rectangle(26, 96, 82, 42)),
-                new Zona("tarea:CAFETERA", "Revisar la cafetera", Sala.COCINA, new Rectangle(112, 76, 50, 40)),
-                new Zona("tarea:HELADERA", "Ordenar la heladera", Sala.COCINA, new Rectangle(312, 62, 62, 84))));
+                new Zona("estacion:PLANCHA", "Plancha", Sala.COCINA, new Rectangle(24, 98, 90, 38)),
+                new Zona("estacion:CAFETERA", "Cafetera", Sala.COCINA, new Rectangle(142, 64, 58, 38)),
+                new Zona("estacion:HELADERA", "Heladera", Sala.COCINA, new Rectangle(324, 58, 52, 90))));
 
         ZONAS.put(Sala.ALMACEN, List.of(
                 new Zona("herramienta:BANO", "Agarrar el trapeador", Sala.ALMACEN, new Rectangle(30, 50, 58, 50)),
@@ -79,27 +100,29 @@ public class EscenaBuffet {
                 new Zona("herramienta:BASURA", "Agarrar la escoba", Sala.ALMACEN, new Rectangle(174, 50, 58, 50)),
                 new Zona("herramienta:TABLERO", "Agarrar el fusible", Sala.ALMACEN, new Rectangle(246, 50, 58, 50)),
                 new Zona("herramienta:PLANCHA", "Agarrar la espátula", Sala.ALMACEN, new Rectangle(30, 124, 58, 50)),
-                new Zona("herramienta:CAFETERA", "Agregar la llave inglesa", Sala.ALMACEN, new Rectangle(102, 124, 58, 50)),
-                new Zona("herramienta:HELADERA", "Agarrar los guantes", Sala.ALMACEN, new Rectangle(174, 124, 58, 50))));
+                new Zona("herramienta:CAFETERA", "Agarrar la llave inglesa", Sala.ALMACEN,
+                        new Rectangle(102, 124, 58, 50)),
+                new Zona("herramienta:HELADERA", "Agarrar los guantes", Sala.ALMACEN, new Rectangle(174, 124, 58, 50)),
+                new Zona("npc", "Hablar con el conserje", Sala.ALMACEN, new Rectangle(304, 178, 64, 36))));
 
         // Huellas de los muebles: el jugador no puede atravesarlos. Son rectángulos
         // algo más chicos que el dibujo para que siempre quede un pasillo claro.
         OBSTACULOS.put(Sala.COMEDOR, List.of(
-                new Rectangle(124, 120, 136, 38),   // mostrador
-                new Rectangle(76, 146, 32, 22),     // mesa grande
-                new Rectangle(134, 178, 32, 24),    // mesa chica
-                new Rectangle(306, 148, 22, 26)));  // basura
+                new Rectangle(124, 120, 136, 38), // mostrador
+                new Rectangle(76, 146, 32, 22), // mesa grande
+                new Rectangle(134, 178, 32, 24), // mesa chica
+                new Rectangle(306, 148, 22, 26))); // basura
 
         OBSTACULOS.put(Sala.BANO, List.of(
-                new Rectangle(20, 42, 168, 58),     // cabinas hasta el piso
-                new Rectangle(220, 68, 82, 22)));   // lavatorios
+                new Rectangle(20, 42, 168, 58), // cabinas hasta el piso
+                new Rectangle(220, 68, 82, 22))); // lavatorios
 
         OBSTACULOS.put(Sala.COCINA, List.of(
-                new Rectangle(40, 68, 100, 34),     // estufa y parrilla
-                new Rectangle(22, 98, 90, 24),      // plancha
-                new Rectangle(110, 72, 52, 24),     // cafetera
-                new Rectangle(228, 58, 100, 30),    // mesada de preparación
-                new Rectangle(320, 56, 60, 92)));   // heladera
+                new Rectangle(44, 62, 92, 34), // estufa
+                new Rectangle(24, 104, 86, 16), // plancha
+                new Rectangle(150, 80, 44, 20), // cafetera
+                new Rectangle(228, 66, 92, 32), // mesada de preparación
+                new Rectangle(324, 60, 48, 90))); // heladera
 
         OBSTACULOS.put(Sala.ALMACEN, List.of(
                 new Rectangle(28, 48, 62, 50), new Rectangle(100, 48, 62, 50),
@@ -107,12 +130,14 @@ public class EscenaBuffet {
                 new Rectangle(28, 122, 62, 52), new Rectangle(100, 122, 62, 52),
                 new Rectangle(172, 122, 62, 52),
                 new Rectangle(242, 124, 34, 24), new Rectangle(290, 126, 24, 18),
-                new Rectangle(314, 122, 26, 18)));
+                new Rectangle(314, 122, 26, 18),
+                new Rectangle(324, 190, 16, 14))); // conserje
     }
 
     private final JuegoService juego;
     private final Random azar = new Random(13);
     private final List<Particula> particulas = new ArrayList<>();
+    private final List<Sombra> sombras = new ArrayList<>();
 
     private Sala sala;
     private double x;
@@ -120,10 +145,16 @@ public class EscenaBuffet {
     private int mirada = 1;
     private double animacion;
     private boolean caminando;
+    private boolean corriendo;
+    private double stamina = STAMINA_MAXIMA;
+    private boolean agotado;
+    private int esperaStamina;
     private int tick;
     private double fundido = 1;
     private int espera = 30;
-    private Consumer<Sala> alCambiarSala = s -> { };
+    private int esperaGolpe;
+    private double golpeFlash;
+    private int golpes;
     private BufferedImage mascaraLuz;
     private int[] pixelesLuz;
 
@@ -138,10 +169,6 @@ public class EscenaBuffet {
 
     // ------------------------------------------------------------------ API
 
-    public void setAlCambiarSala(Consumer<Sala> alCambiarSala) {
-        this.alCambiarSala = alCambiarSala;
-    }
-
     public Sala getSala() {
         return sala;
     }
@@ -154,10 +181,6 @@ public class EscenaBuffet {
         return y;
     }
 
-    public int getTick() {
-        return tick;
-    }
-
     public void setSala(Sala nueva) {
         if (nueva == null) {
             return;
@@ -167,12 +190,24 @@ public class EscenaBuffet {
         ubicarEntrada(nueva, null);
         fundido = 1;
         espera = 30;
+        reiniciarSombras();
     }
 
     public void reiniciarPosicion() {
         ubicarEntrada(sala, null);
         fundido = 1;
         espera = 30;
+        stamina = STAMINA_MAXIMA;
+        agotado = false;
+        esperaStamina = 0;
+        reiniciarSombras();
+    }
+
+    /** Las sombras no cruzan puertas con vos: te esperan del otro lado. */
+    private void reiniciarSombras() {
+        sombras.clear();
+        esperaGolpe = 50;
+        golpeFlash = 0;
     }
 
     public void actualizar(Set<Integer> teclas, boolean bloqueado) {
@@ -188,16 +223,39 @@ public class EscenaBuffet {
         double dy = 0;
         if (!bloqueado && espera < 20) {
             if (teclas.contains(java.awt.event.KeyEvent.VK_A)
-                    || teclas.contains(java.awt.event.KeyEvent.VK_LEFT)) dx--;
+                    || teclas.contains(java.awt.event.KeyEvent.VK_LEFT))
+                dx--;
             if (teclas.contains(java.awt.event.KeyEvent.VK_D)
-                    || teclas.contains(java.awt.event.KeyEvent.VK_RIGHT)) dx++;
+                    || teclas.contains(java.awt.event.KeyEvent.VK_RIGHT))
+                dx++;
             if (teclas.contains(java.awt.event.KeyEvent.VK_W)
-                    || teclas.contains(java.awt.event.KeyEvent.VK_UP)) dy--;
+                    || teclas.contains(java.awt.event.KeyEvent.VK_UP))
+                dy--;
             if (teclas.contains(java.awt.event.KeyEvent.VK_S)
-                    || teclas.contains(java.awt.event.KeyEvent.VK_DOWN)) dy++;
+                    || teclas.contains(java.awt.event.KeyEvent.VK_DOWN))
+                dy++;
         }
 
         caminando = dx != 0 || dy != 0;
+        boolean quiereCorrer = caminando && teclas.contains(java.awt.event.KeyEvent.VK_SHIFT);
+        if (!quiereCorrer) {
+            agotado = false;
+        }
+        corriendo = quiereCorrer && !agotado && stamina > 0;
+        if (corriendo) {
+            stamina = Math.max(0, stamina - GASTE_STAMINA);
+            if (stamina <= 0) {
+                // Se quedó sin aguante: vuelve a caminar y espera un momento antes de
+                // recuperar.
+                agotado = true;
+                corriendo = false;
+                esperaStamina = ESPERA_STAMINA;
+            }
+        } else if (esperaStamina > 0) {
+            esperaStamina--;
+        } else {
+            stamina = Math.min(STAMINA_MAXIMA, stamina + REGENERACION_STAMINA);
+        }
         if (caminando) {
             double largo = Math.hypot(dx, dy);
             dx /= largo;
@@ -205,9 +263,10 @@ public class EscenaBuffet {
             if (dx != 0) {
                 mirada = dx > 0 ? 1 : -1;
             }
-            int yMinimo = sala == Sala.ALMACEN ? 28 : 58;
-            double nx = Math.max(14, Math.min(ANCHO - 14, x + dx * VELOCIDAD));
-            double ny = Math.max(yMinimo, Math.min(212, y + dy * VELOCIDAD));
+            double velocidad = corriendo ? VELOCIDAD_CORRER : VELOCIDAD;
+            int yMinimo = pisoMinimo();
+            double nx = Math.max(14, Math.min(ANCHO - 14, x + dx * velocidad));
+            double ny = Math.max(yMinimo, Math.min(PISO_MAXIMO, y + dy * velocidad));
             // Resolvemos cada eje por separado para poder deslizarse contra los muebles.
             if (!bloquea(nx, y)) {
                 x = nx;
@@ -215,36 +274,189 @@ public class EscenaBuffet {
             if (!bloquea(x, ny)) {
                 y = ny;
             }
-            animacion += 0.18;
+            animacion += corriendo ? 0.30 : 0.18;
         }
 
-        int yMinimo = sala == Sala.ALMACEN ? 28 : 58;
+        int yMinimo = pisoMinimo();
         x = Math.max(14, Math.min(ANCHO - 14, x));
-        y = Math.max(yMinimo, Math.min(212, y));
+        y = Math.max(yMinimo, Math.min(PISO_MAXIMO, y));
 
         if (!bloqueado && espera <= 0 && fundido < 0.4) {
             revisarPuertas();
         }
         actualizarParticulas();
+        actualizarSombras(bloqueado);
+        if (golpeFlash > 0) {
+            golpeFlash = Math.max(0, golpeFlash - 0.055);
+        }
     }
 
+    public boolean isCorriendo() {
+        return corriendo;
+    }
+
+    /** Aguante restante para correr, de 0 a 100. */
+    public double getStamina() {
+        return stamina;
+    }
+
+    public double getStaminaMaxima() {
+        return STAMINA_MAXIMA;
+    }
+
+    /** Cantidad acumulada de golpes de sombra, para que el HUD pueda destellar. */
+    public int getGolpes() {
+        return golpes;
+    }
+
+    /** Los pies solo pisan el piso de cada sala, nunca la pared. */
+    private int pisoMinimo() {
+        return switch (sala) {
+            case BANO -> 96;
+            case COCINA -> 98;
+            case ALMACEN -> 100;
+            default -> 94;
+        };
+    }
+
+    // ------------------------------------------------------------------ sombras
+    // del apagón
+
+    /**
+     * El apagón dura lo que tarde el tablero: mientras tanto, las sombras caminan.
+     */
+    private boolean apagon() {
+        return juego.hayTareaPendiente(Lugar.TABLERO);
+    }
+
+    private void actualizarSombras(boolean bloqueado) {
+        if (!apagon()) {
+            if (!sombras.isEmpty()) {
+                sombras.clear();
+            }
+            esperaGolpe = Math.max(0, esperaGolpe - 1);
+            return;
+        }
+        // Con un menú abierto el turno no corre: las sombras esperan.
+        if (bloqueado) {
+            return;
+        }
+        if (sombras.isEmpty()) {
+            sembrarSombras();
+        }
+        if (esperaGolpe > 0) {
+            esperaGolpe--;
+        }
+
+        for (Sombra s : sombras) {
+            double dx = x - s.x;
+            double dy = (y - 6) - s.y;
+            double distancia = Math.hypot(dx, dy);
+            if (distancia > 0.001) {
+                s.x += dx / distancia * VELOCIDAD_SOMBRA;
+                s.y += dy / distancia * VELOCIDAD_SOMBRA;
+            }
+            // Deriva leve: nunca caminan en una línea perfecta.
+            s.fase += 0.05;
+            s.x += Math.cos(s.fase * 1.7) * 0.06;
+            s.y += Math.sin(s.fase * 1.3) * 0.04;
+            s.x = Math.max(12, Math.min(ANCHO - 12, s.x));
+            s.y = Math.max(pisoMinimo() - 4, Math.min(PISO_MAXIMO, s.y));
+
+            if (esperaGolpe <= 0 && distancia < DISTANCIA_GOLPE) {
+                esperaGolpe = ESPERA_GOLPE;
+                golpeFlash = 1;
+                golpes++;
+                juego.golpeSombra();
+                // Retrocede tras el susto: no te atrapa, te desgasta.
+                double empuje = Math.max(1, distancia);
+                s.x -= dx / empuje * 24;
+                s.y -= dy / empuje * 24;
+            }
+        }
+    }
+
+    /**
+     * Tres sombras lejos del jugador para que el apagón se sienta poblado, no
+     * injusto.
+     */
+    private void sembrarSombras() {
+        sombras.clear();
+        for (int i = 0; i < SOMBRAS_APAGON; i++) {
+            Sombra s = new Sombra();
+            int intentos = 0;
+            do {
+                s.x = 36 + azar.nextDouble() * (ANCHO - 72);
+                s.y = pisoMinimo() + azar.nextDouble() * (PISO_MAXIMO - pisoMinimo());
+                intentos++;
+            } while (Math.hypot(s.x - x, s.y - y) < 38 && intentos < 24);
+            s.fase = azar.nextDouble() * Math.PI * 2;
+            sombras.add(s);
+        }
+        esperaGolpe = 60; // margen para reaccionar al primer parpadeo
+    }
+
+    private static final class Sombra {
+        double x;
+        double y;
+        double fase;
+    }
+
+    /**
+     * La zona accionable más cercana. Una estación solo aparece si está rota o si
+     * de ahí
+     * sale el pedido actual; las tareas, solo mientras siguen pendientes.
+     */
     public Zona zonaCercana() {
         List<Zona> zonas = ZONAS.get(sala);
         if (zonas == null) {
             return null;
         }
+        Zona cercana = null;
+        double mejor = Double.MAX_VALUE;
         for (Zona z : zonas) {
+            if (!zonaActiva(z)) {
+                continue;
+            }
             Rectangle r = z.area();
             double cx = Math.max(r.x, Math.min(x, r.x + r.width));
             double cy = Math.max(r.y, Math.min(y, r.y + r.height));
-            if (Math.hypot(x - cx, y - cy) <= DISTANCIA) {
-                return z;
+            double distancia = Math.hypot(x - cx, y - cy);
+            if (distancia <= DISTANCIA && distancia < mejor) {
+                mejor = distancia;
+                cercana = z;
             }
         }
-        return null;
+        return cercana;
     }
 
-    /** Evita que el jugador se meta dentro de un mueble. El punto de apoyo son los pies. */
+    private boolean zonaActiva(Zona z) {
+        String id = z.id();
+        if (id.equals("cliente")) {
+            Cliente c = juego.clienteActual();
+            return c != null && (!c.isPedidoTomado() || juego.tieneBandejaPara(c));
+        }
+        if (id.startsWith("estacion:")) {
+            Lugar estacion = Lugar.valueOf(id.substring("estacion:".length()));
+            if (juego.hayTareaPendiente(estacion)) {
+                return true;
+            }
+            Cliente c = juego.clienteActual();
+            return c != null && c.isPedidoTomado()
+                    && JuegoService.estacionPara(c) == estacion
+                    && !juego.tieneBandejaPara(c)
+                    && juego.getEnMano() == null;
+        }
+        if (id.startsWith("tarea:")) {
+            return juego.hayTareaPendiente(Lugar.valueOf(id.substring("tarea:".length())));
+        }
+        return true;
+    }
+
+    /**
+     * Evita que el jugador se meta dentro de un mueble. El punto de apoyo son los
+     * pies.
+     */
     private boolean bloquea(double nx, double ny) {
         List<Rectangle> obstaculos = OBSTACULOS.get(sala);
         if (obstaculos == null) {
@@ -262,7 +474,7 @@ public class EscenaBuffet {
     // ------------------------------------------------------------------ puertas
 
     private void revisarPuertas() {
-        boolean franja = y > 94 && y < 166;
+        boolean franja = y > 92 && y < 166;
         switch (sala) {
             case COMEDOR:
                 if (franja && x < 20) {
@@ -279,12 +491,12 @@ public class EscenaBuffet {
             case COCINA:
                 if (franja && x < 20) {
                     irA(Sala.COMEDOR);
-                } else if (x > 166 && x < 222 && y > 202) {
+                } else if (x > 166 && x < 222 && y > 200) {
                     irA(Sala.ALMACEN);
                 }
                 break;
             case ALMACEN:
-                if (x > 166 && x < 222 && y < 34) {
+                if (x > 166 && x < 222 && y > 200) {
                     irA(Sala.COCINA);
                 }
                 break;
@@ -300,7 +512,7 @@ public class EscenaBuffet {
         ubicarEntrada(destino, origen);
         fundido = 1;
         espera = 30;
-        alCambiarSala.accept(destino);
+        reiniciarSombras();
     }
 
     private void ubicarEntrada(Sala destino, Sala origen) {
@@ -320,7 +532,7 @@ public class EscenaBuffet {
                 break;
             case ALMACEN:
                 x = 192;
-                y = 44;
+                y = 190;
                 break;
             case COMEDOR:
             default:
@@ -411,9 +623,18 @@ public class EscenaBuffet {
         }
 
         dibujarParticulas(g);
+        dibujarSombras(g, false);
         dibujarJugador(g);
+        dibujarSombras(g, true);
         pintarLuz(g);
+        dibujarOjosSombras(g);
+        dibujarMarcadores(g);
         pintarCordura(g);
+
+        if (golpeFlash > 0) {
+            g.setColor(new Color(122, 12, 16, (int) Math.round(golpeFlash * 76)));
+            g.fillRect(0, 0, ANCHO, ALTO);
+        }
 
         if (fundido > 0) {
             g.setColor(new Color(0, 0, 0, (int) Math.round(fundido * 255)));
@@ -471,7 +692,7 @@ public class EscenaBuffet {
     private void dibujarClientes(Graphics2D g) {
         int pendientes = juego.totalClientes() - juego.clientesAtendidos();
         int dibujados = Math.min(3, pendientes);
-        int[] lugares = {158, 192, 226};
+        int[] lugares = { 158, 192, 226 };
         for (int i = 0; i < dibujados; i++) {
             int cx = lugares[i] + (int) Math.round(Math.sin((tick + i * 37) * 0.03) * 1.5);
             figuraCliente(g, cx, 132, i);
@@ -479,7 +700,8 @@ public class EscenaBuffet {
     }
 
     private void mostrador(Graphics2D g) {
-        // Mueble en medio del salón: los clientes quedan detrás y el jugador atiende desde adelante.
+        // Mueble en medio del salón: los clientes quedan detrás y el jugador atiende
+        // desde adelante.
         caja(g, 124, 124, 136, 26, 8, MADERA, MADERA_CLARA, MADERA_OSCURA);
         r(g, 124, 124, 136, 4, METAL_CLARO);
         r(g, 126, 128, 132, 2, METAL);
@@ -503,7 +725,7 @@ public class EscenaBuffet {
         // Zócalo y cartel de la caja.
         r(g, 124, 152, 136, 2, new Color(0x2A1C12));
         r(g, 130, 137, 124, 3, new Color(0x4A3422));
-        Pixel.texto(g, "CAJA", 178, 143, 6, MOSTAZA, true);
+        Pixel.textoDisplay(g, "CAJA", 178, 143, 6, MOSTAZA, true);
     }
 
     private void mesa(Graphics2D g, int cx, int cy) {
@@ -577,7 +799,7 @@ public class EscenaBuffet {
         r(g, x, y, w, h, new Color(0x262019));
         r(g, x + 1, y + 1, w - 2, h - 2, new Color(0x3A3022));
         r(g, x + 1, y + 1, w - 2, 1, new Color(0x6B4E32));
-        Pixel.texto(g, "MENU", x + 5, y + 9, 8, MOSTAZA, true);
+        Pixel.textoDisplay(g, "MENU", x + 5, y + 9, 8, MOSTAZA, true);
         r(g, x + 5, y + 12, w - 10, 1, new Color(0x6B4E32));
         for (int i = 0; i < 3; i++) {
             r(g, x + 5, y + 16 + i * 5, 18, 1, new Color(0x8C7A5C));
@@ -598,7 +820,7 @@ public class EscenaBuffet {
         r(g, x + 13, y + 12, 8, 5, new Color(0x4A5A50));
         r(g, x + 15, y + 8, 1, 1, new Color(0xE8E4D4));
         r(g, x + 18, y + 8, 1, 1, new Color(0xE8E4D4));
-        Pixel.texto(g, "PERDIDA", x + 4, y + 25, 6, new Color(0x5A3428), true);
+        Pixel.textoDisplay(g, "PERDIDA", x + 4, y + 25, 6, new Color(0x5A3428), true);
         r(g, x + 4, y + 29, w - 8, 1, new Color(0x8C7A5C));
         r(g, x + 4, y + 32, w - 12, 1, new Color(0x8C7A5C));
         r(g, x + 4, y + 35, w - 10, 1, new Color(0x8C7A5C));
@@ -642,7 +864,7 @@ public class EscenaBuffet {
         balde(g, 102, 170);
 
         // grafiti
-        Pixel.texto(g, "NO MIRES", 158, 34, 8, new Color(0x7E2A26, true), true);
+        Pixel.textoDisplay(g, "NO MIRES", 158, 34, 8, new Color(0x7E2A26), true);
 
         // luz fluorescente
         r(g, 172, 4, 44, 3, new Color(0xD8E6D5));
@@ -654,7 +876,8 @@ public class EscenaBuffet {
     }
 
     private void cabina(Graphics2D g, int x, int y, int w) {
-        // La cabina baja de la pared hasta el piso: así no queda flotando en el horizonte.
+        // La cabina baja de la pared hasta el piso: así no queda flotando en el
+        // horizonte.
         sombra(g, x + 2, y + 52, w - 4, 10);
         r(g, x, y, w, 46, new Color(0x334B41));
         r(g, x + 2, y + 2, w - 4, 42, new Color(0x253A32));
@@ -742,94 +965,83 @@ public class EscenaBuffet {
         luzPiso(g, 300, 96, 54, 34, new Color(0xFFE6A0));
         luzPiso(g, 192, 150, 40, 30, new Color(0xFFD68C));
 
-        // campana extractora
-        r(g, 34, 8, 150, 8, new Color(0x4A5952));
-        r(g, 38, 16, 142, 5, new Color(0x63746A));
+        // campana extractora, arriba y lejos de los muebles
+        r(g, 40, 8, 144, 8, new Color(0x4A5952));
+        r(g, 44, 16, 136, 5, new Color(0x63746A));
         r(g, 120, 0, 20, 8, new Color(0x3A4741));
         for (int i = 0; i < 5; i++) {
-            r(g, 46 + i * 26, 16, 18, 1, new Color(0x2A3732));
+            r(g, 48 + i * 26, 16, 18, 1, new Color(0x2A3732));
         }
 
-        // estufa con la parrilla sobre la tapa (no en la cara frontal)
-        caja(g, 44, 72, 92, 26, 10, new Color(0x3A4741), new Color(0x5A6A60), new Color(0x26302C));
-        r(g, 44, 72, 92, 2, new Color(0x6B7A70));
-        r(g, 46, 74, 88, 8, new Color(0x242C28));
-        for (int i = 0; i < 8; i++) {
-            r(g, 48 + i * 11, 74, 2, 8, new Color(0x59675F));
+        // estufa: 44..136 x 62..96, sin invadir la plancha
+        caja(g, 44, 62, 92, 24, 10, new Color(0x3A4741), new Color(0x5A6A60), new Color(0x26302C));
+        r(g, 46, 64, 88, 6, new Color(0x242C28));
+        for (int i = 0; i < 4; i++) {
+            r(g, 50 + i * 21, 65, 14, 4, new Color(0x59675F));
+            r(g, 52 + i * 21, 66, 10, 1, new Color(0x8A3E2A));
         }
-        r(g, 46, 76, 88, 1, new Color(0x3A4540));
-        r(g, 46, 79, 88, 1, new Color(0x3A4540));
-        for (int i = 0; i < 7; i++) {
-            r(g, 53 + i * 11, 80, 5, 1, new Color(0x8A3E2A));
-            if (i % 2 == 0) {
-                r(g, 55 + i * 11, 78, 2, 1, new Color(0xE08A3C));
-            }
-        }
-        // perillas del frente
+        r(g, 44, 76, 92, 1, new Color(0x6B7A70));
         for (int i = 0; i < 3; i++) {
-            r(g, 56 + i * 24, 88, 6, 5, new Color(0x2A3531));
-            r(g, 57 + i * 24, 89, 4, 3, METAL_CLARO);
+            r(g, 56 + i * 24, 82, 6, 5, new Color(0x2A3531));
+            r(g, 57 + i * 24, 83, 4, 3, METAL_CLARO);
         }
-        r(g, 46, 100, 88, 2, METAL_OSCURO);
-        if (juego.hayTareaPendiente(Lugar.PLANCHA)) {
-            r(g, 92, 74, 1, 2, new Color(0x6E7E74));
-            r(g, 96, 72, 2, 1, new Color(0x8A9A90));
-        }
+        r(g, 46, 92, 88, 2, METAL_OSCURO);
 
-        // plancha / freidora
-        caja(g, 26, 104, 82, 16, 6, new Color(0x3C4B44), new Color(0x5C6E63), new Color(0x27322D));
-        r(g, 30, 102, 74, 4, new Color(0x1A211E));
-        r(g, 30, 103, 74, 1, new Color(0x8A6A3A));
+        // plancha / freidora: 24..110 x 104..120
+        caja(g, 24, 104, 86, 10, 6, new Color(0x3C4B44), new Color(0x5C6E63), new Color(0x27322D));
+        r(g, 30, 106, 74, 3, new Color(0x1A211E));
+        r(g, 30, 107, 74, 1, new Color(0x8A6A3A));
         for (int i = 0; i < 5; i++) {
-            r(g, 36 + i * 13, 106, 7, 1, new Color(0x2A2A22));
-            r(g, 36 + i * 13, 108, 7, 1, new Color(0x2A2A22));
+            r(g, 36 + i * 13, 109, 7, 1, new Color(0x2A2A22));
         }
+        r(g, 34, 114, 66, 1, new Color(0x2A3531));
         if (juego.hayTareaPendiente(Lugar.PLANCHA)) {
-            r(g, 58, 100, 1, 2, new Color(0x6E7E74));
-            r(g, 63, 97, 2, 1, new Color(0x8A9A90));
+            r(g, 58, 101, 1, 2, new Color(0x6E7E74));
+            r(g, 63, 98, 2, 1, new Color(0x8A9A90));
         }
 
-        // cafetera
-        caja(g, 116, 78, 42, 14, 6, new Color(0x3A4741), new Color(0x5C6E63), new Color(0x26302C));
-        r(g, 122, 68, 12, 10, new Color(0x2A2E2A));
-        r(g, 123, 69, 10, 6, new Color(0x8A3E32));
-        r(g, 126, 64, 4, 4, new Color(0xD0D8CE));
-        r(g, 140, 80, 12, 8, new Color(0xB8C4B6));
-        r(g, 141, 81, 10, 3, new Color(0x3A2620));
-        r(g, 142, 86, 2, 4, new Color(0xE08A3C));
+        // cafetera: 150..194, separada de la estufa y de la mesada
+        caja(g, 150, 84, 44, 10, 6, new Color(0x3A4741), new Color(0x5C6E63), new Color(0x26302C));
+        r(g, 160, 66, 24, 3, new Color(0x2A2E2A));
+        r(g, 162, 69, 20, 13, new Color(0x2A2E2A));
+        r(g, 164, 71, 16, 7, new Color(0x8A3E32));
+        r(g, 167, 72, 10, 1, new Color(0xC4513F));
+        r(g, 166, 84, 12, 8, new Color(0xB8C4B6, true));
+        r(g, 168, 88, 8, 3, new Color(0x3A2620));
+        r(g, 184, 86, 5, 8, new Color(0x1A211E));
+        r(g, 185, 88, 3, 2, new Color(0xD9A441));
+        r(g, 157, 80, 3, 6, new Color(0x59675F));
         if (juego.hayTareaPendiente(Lugar.CAFETERA)) {
-            r(g, 131, 84, 1, 4, new Color(0x5A3428));
-            r(g, 132, 88, 1, 2, new Color(0x5A3428));
+            r(g, 172, 98, 1, 3, new Color(0x5A3428));
+            r(g, 173, 101, 1, 1, new Color(0x5A3428));
         }
 
-        // mesada de preparación
-        caja(g, 232, 66, 90, 18, 8, new Color(0x596B60), new Color(0x8A9E90), new Color(0x3A4741));
-        r(g, 234, 64, 86, 3, new Color(0xC4D0C6));
-        // bandejas y utensilios
-        r(g, 250, 60, 18, 3, METAL);
-        r(g, 252, 57, 14, 3, new Color(0xD9E2D6));
-        r(g, 276, 58, 12, 5, new Color(0x8E2F2A));
-        r(g, 290, 59, 4, 1, new Color(0xD9A441));
-        r(g, 300, 50, 1, 14, METAL);
-        r(g, 296, 50, 9, 2, METAL_CLARO);
+        // mesada de preparación: 228..320 x 66..98
+        caja(g, 228, 66, 92, 24, 8, new Color(0x596B60), new Color(0x8A9E90), new Color(0x3A4741));
+        r(g, 230, 64, 88, 3, new Color(0xC4D0C6));
+        r(g, 240, 58, 18, 3, METAL);
+        r(g, 242, 55, 14, 3, new Color(0xD9E2D6));
+        r(g, 270, 57, 12, 5, new Color(0x8E2F2A));
+        r(g, 284, 58, 4, 1, new Color(0xD9A441));
+        r(g, 298, 52, 1, 12, METAL);
+        r(g, 294, 52, 9, 2, METAL_CLARO);
 
-        // heladera grande
-        caja(g, 326, 62, 48, 82, 8, new Color(0x84928A), new Color(0xB0BCB4), new Color(0x5A6A60));
-        r(g, 328, 64, 44, 1, new Color(0xD6DED4));
-        r(g, 328, 94, 44, 1, new Color(0x4A5952));
-        r(g, 366, 76, 2, 12, new Color(0x4A5952));
+        // heladera: 324..372 x 60..150
+        caja(g, 324, 60, 48, 82, 8, new Color(0x84928A), new Color(0xB0BCB4), new Color(0x5A6A60));
+        r(g, 326, 62, 44, 1, new Color(0xD6DED4));
+        r(g, 326, 92, 44, 1, new Color(0x4A5952));
+        r(g, 366, 74, 2, 12, new Color(0x4A5952));
         r(g, 366, 100, 2, 20, new Color(0x4A5952));
-        r(g, 334, 70, 4, 3, MOSTAZA);
-        r(g, 344, 72, 2, 2, new Color(0xC4513F));
-        // mano en el vidrio
-        r(g, 336, 112, 3, 1, new Color(0xC8D2C8));
-        r(g, 337, 113, 1, 3, new Color(0xC8D2C8));
+        r(g, 332, 68, 4, 3, MOSTAZA);
+        r(g, 342, 70, 2, 2, new Color(0xC4513F));
+        r(g, 334, 110, 3, 1, new Color(0xC8D2C8));
+        r(g, 335, 111, 1, 3, new Color(0xC8D2C8));
         if (juego.hayTareaPendiente(Lugar.HELADERA)) {
-            r(g, 350, 130, 8, 1, new Color(0x5A3428));
-            r(g, 352, 132, 4, 1, new Color(0x5A3428));
+            r(g, 348, 132, 8, 1, new Color(0x5A3428));
+            r(g, 350, 134, 4, 1, new Color(0x5A3428));
         }
 
-        // ollas colgadas
+        // ollas colgadas entre la campana y la mesada
         r(g, 196, 18, 1, 14, new Color(0x2A3732));
         r(g, 188, 30, 18, 3, new Color(0x7C8A85));
         r(g, 190, 33, 14, 7, new Color(0x4C5953));
@@ -837,10 +1049,11 @@ public class EscenaBuffet {
         r(g, 214, 22, 1, 12, new Color(0x2A3732));
         r(g, 208, 32, 14, 2, new Color(0x8A9691));
 
-        // puertas
+        // puertas y lámparas
         puertaLateral(g, true, "COMEDOR");
-        puertaAbajo(g, "ALMACÉN");
-        lampara(g, 90, 10);
+        puertaAbajo(g, "ALMAC\u00c9N");
+        lampara(g, 210, 8);
+        lampara(g, 304, 10);
     }
 
     // ------------------------------------------------------------------ almacén
@@ -897,8 +1110,8 @@ public class EscenaBuffet {
         r(g, 8, 8, 1, 6, new Color(0x6A7C70, true));
         r(g, 12, 12, 6, 1, new Color(0x6A7C70, true));
 
-        // puerta de arriba
-        puertaArriba(g, "COCINA");
+        // escotilla en el piso: única salida al pasillo de la cocina
+        puertaAbajo(g, "COCINA");
         // bombilla
         r(g, 190, 0, 1, 20, new Color(0x2A2118));
         r(g, 186, 20, 9, 4, new Color(0x4A3A28));
@@ -906,6 +1119,89 @@ public class EscenaBuffet {
         if (juego.hayTareaPendiente(Lugar.TABLERO)) {
             r(g, 189, 25, 1, 2, new Color(0xB88A3A));
         }
+
+        dibujarConserje(g);
+    }
+
+    /**
+     * El conserje es el ancla humana del almacén y la única luz durante un apagón.
+     */
+    private void dibujarConserje(Graphics2D g) {
+        int x = 330;
+        int pies = 204;
+        int bob = (tick / 22) % 2;
+        sombra(g, x - 9, pies - 2, 19, 5);
+
+        // botas y pantalón
+        r(g, x - 6, pies - 8, 4, 8, new Color(0x1A211E));
+        r(g, x + 2, pies - 8, 4, 8, new Color(0x1A211E));
+        r(g, x - 7, pies - 2, 5, 2, new Color(0x090C0A));
+        r(g, x + 2, pies - 2, 5, 2, new Color(0x090C0A));
+
+        // abrigo largo con botones
+        r(g, x - 7, pies - 19 + bob, 14, 12, new Color(0x24352D));
+        r(g, x - 7, pies - 19 + bob, 3, 12, new Color(0x32463C));
+        r(g, x + 2, pies - 19 + bob, 5, 12, new Color(0x1B2923));
+        r(g, x - 1, pies - 17 + bob, 1, 8, new Color(0x0E1713));
+        r(g, x - 1, pies - 15 + bob, 1, 1, new Color(0xB08A5A));
+        r(g, x - 1, pies - 11 + bob, 1, 1, new Color(0xB08A5A));
+
+        // manos y candelabro
+        r(g, x - 9, pies - 13 + bob, 2, 4, PIEL_OSCURA);
+        r(g, x + 7, pies - 13 + bob, 2, 4, PIEL_OSCURA);
+        r(g, x + 8, pies - 18 + bob, 3, 7, new Color(0xD8D2C0));
+        r(g, x + 9, pies - 20 + bob, 1, 2, new Color(0xFFE6A0));
+        r(g, x + 8, pies - 21 + bob, 3, 1, new Color(0xF0C56B));
+
+        // cabeza, barba y gorra
+        r(g, x - 5, pies - 28 + bob, 11, 10, new Color(0x0A0E0C));
+        r(g, x - 4, pies - 27 + bob, 9, 8, PIEL);
+        r(g, x - 4, pies - 22 + bob, 9, 3, new Color(0xC8C4B4));
+        r(g, x - 3, pies - 20 + bob, 7, 1, new Color(0x9DAFA4));
+        r(g, x - 5, pies - 29 + bob, 12, 3, new Color(0x1B2923));
+        r(g, x - 6, pies - 27 + bob, 14, 2, new Color(0x32463C));
+        r(g, x - 4, pies - 26 + bob, 2, 1, new Color(0xB08A5A));
+        // ojos cansados
+        r(g, x - 2, pies - 24 + bob, 1, 1, new Color(0x1A211E));
+        r(g, x + 2, pies - 24 + bob, 1, 1, new Color(0x1A211E));
+    }
+
+    // ------------------------------------------------------------------ marcadores
+
+    /**
+     * Señal flotante sobre cada tarea pendiente; se dibuja después de la luz para
+     * no perderse.
+     */
+    private void dibujarMarcadores(Graphics2D g) {
+        switch (sala) {
+            case COMEDOR -> {
+                marcador(g, 30, 60, Lugar.TABLERO);
+                marcador(g, 92, 138, Lugar.MESAS);
+                marcador(g, 316, 140, Lugar.BASURA);
+            }
+            case BANO -> marcador(g, 150, 126, Lugar.BANO);
+            case COCINA -> {
+                marcador(g, 60, 96, Lugar.PLANCHA);
+                marcador(g, 172, 62, Lugar.CAFETERA);
+                marcador(g, 348, 50, Lugar.HELADERA);
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void marcador(Graphics2D g, int x, int y, Lugar lugar) {
+        if (!juego.hayTareaPendiente(lugar)) {
+            return;
+        }
+        Tarea tarea = juego.tareaPendienteEn(lugar);
+        Color color = tarea != null && tarea.getPrioridad() >= 3 ? ROJO_CLARO : MOSTAZA;
+        int bob = (tick / 12) % 2;
+        int yy = y - bob;
+        r(g, x - 1, yy - 2, 3, 1, NEGRO);
+        r(g, x - 2, yy - 1, 5, 1, color);
+        r(g, x - 1, yy, 3, 1, NEGRO);
+        r(g, x, yy + 1, 1, 1, NEGRO);
     }
 
     private void estante(Graphics2D g, int x, int y, int w) {
@@ -917,7 +1213,8 @@ public class EscenaBuffet {
         // mercadería
         for (int i = 0; i < 3; i++) {
             r(g, x + 6 + i * 16, y + 6, 11, 12, i % 2 == 0
-                    ? new Color(0x5A4430) : new Color(0x4A5A50));
+                    ? new Color(0x5A4430)
+                    : new Color(0x4A5A50));
             r(g, x + 7 + i * 16, y + 7, 9, 1, new Color(0x8A6844));
             r(g, x + 7 + i * 16, y + 10, 9, 1, new Color(0x2E2A22));
         }
@@ -929,7 +1226,8 @@ public class EscenaBuffet {
         r(g, x + 42, y + 24, 4, 2, new Color(0x4A5A50));
     }
 
-    // ------------------------------------------------------------------ piezas comunes
+    // ------------------------------------------------------------------ piezas
+    // comunes
 
     private void pared(Graphics2D g, int alto, Color base, Color oscura, Color franja) {
         gradiente(g, 0, 0, ANCHO, alto - 8, mezclar(base, oscura, 0.6), base);
@@ -947,7 +1245,8 @@ public class EscenaBuffet {
         int y = desdeY;
         int fila = 0;
         while (y < ALTO) {
-            // Las baldosas se agrandan hacia abajo: da perspectiva sin dibujar contornos por todos lados.
+            // Las baldosas se agrandan hacia abajo: da perspectiva sin dibujar contornos
+            // por todos lados.
             int alto = Math.min(14, 6 + fila * 2);
             int ancho = Math.min(34, 18 + fila * 2);
             int off = (fila % 2 == 0) ? 0 : -(ancho / 2);
@@ -976,7 +1275,10 @@ public class EscenaBuffet {
         }
     }
 
-    /** Charco de luz sobre las baldosas: filas que se angostan y se apagan con tramado. */
+    /**
+     * Charco de luz sobre las baldosas: filas que se angostan y se apagan con
+     * tramado.
+     */
     private void luzPiso(Graphics2D g, int cx, int y, int ancho, int alto, Color color) {
         for (int i = 0; i < alto; i++) {
             int anchoFila = ancho - i * 2;
@@ -995,7 +1297,9 @@ public class EscenaBuffet {
         }
     }
 
-    /** Alfombra gastada del comedor: borde oscuro, guardas y rombos descoloridos. */
+    /**
+     * Alfombra gastada del comedor: borde oscuro, guardas y rombos descoloridos.
+     */
     private void alfombra(Graphics2D g, int x, int y, int w, int h) {
         r(g, x - 1, y - 1, w + 2, h + 2, new Color(0x120E0B));
         r(g, x, y, w, h, new Color(0x3E1B18));
@@ -1081,35 +1385,25 @@ public class EscenaBuffet {
         r(g, cartelX, 72, 38, 11, new Color(0x17110C));
         r(g, cartelX + 1, 73, 36, 9, new Color(0x3A3022));
         r(g, cartelX + 1, 73, 36, 1, new Color(0x6B4E32));
-        Pixel.texto(g, etiqueta, cartelX + 3, 81, 6, MOSTAZA, true);
+        Pixel.texto(g, etiqueta, cartelX + 3, 81, Pixel.T_CHICO, MOSTAZA);
         // flecha
-        Pixel.texto(g, izquierda ? "<" : ">", izquierda ? 8 : ANCHO - 16, 96, 8, MOSTAZA, true);
+        Pixel.textoDisplay(g, izquierda ? "<" : ">", izquierda ? 8 : ANCHO - 16, 98, 8, MOSTAZA, true);
     }
 
     private void puertaAbajo(Graphics2D g, String etiqueta) {
-        // Escotilla en el piso: se ve por encima de la bitácora y marca la salida al almacén.
-        r(g, 166, 194, 52, 20, new Color(0x3E2C1D));
-        r(g, 168, 196, 48, 16, new Color(0x070A09));
-        r(g, 168, 196, 48, 2, new Color(0x6B4E32));
+        // Escotilla en el piso, siempre por encima de la franja del HUD.
+        r(g, 166, 188, 52, 18, new Color(0x3E2C1D));
+        r(g, 168, 190, 48, 14, new Color(0x070A09));
+        r(g, 168, 190, 48, 2, new Color(0x6B4E32));
         for (int i = 0; i < 4; i++) {
-            r(g, 170 + i * 12, 198, 2, 12, new Color(0x2A3732));
+            r(g, 170 + i * 12, 192, 2, 10, new Color(0x2A3732));
         }
-        r(g, 168, 210, 48, 2, new Color(0x2A1C12));
-        r(g, 162, 180, 60, 13, new Color(0x17110C));
-        r(g, 163, 181, 58, 11, new Color(0x3A3022));
-        r(g, 163, 181, 58, 1, new Color(0x6B4E32));
-        Pixel.textoCentrado(g, etiqueta, 192, 190, 7, MOSTAZA, true);
-        Pixel.textoCentrado(g, "v", 192, 209, 6, MOSTAZA, true);
-    }
-
-    private void puertaArriba(Graphics2D g, String etiqueta) {
-        r(g, 170, 0, 44, 14, new Color(0x3E2C1D));
-        r(g, 172, 0, 40, 12, new Color(0x070A09));
-        r(g, 172, 10, 40, 2, new Color(0x6B4E32));
-        r(g, 168, 14, 48, 8, new Color(0x17110C));
-        r(g, 169, 15, 46, 6, new Color(0x3A3022));
-        Pixel.texto(g, etiqueta, 176, 21, 6, MOSTAZA, true);
-        Pixel.texto(g, "^", 190, 8, 6, MOSTAZA, true);
+        r(g, 168, 204, 48, 1, new Color(0x2A1C12));
+        r(g, 162, 172, 60, 13, new Color(0x17110C));
+        r(g, 163, 173, 58, 11, new Color(0x3A3022));
+        r(g, 163, 173, 58, 1, new Color(0x6B4E32));
+        Pixel.textoCentrado(g, etiqueta, 192, 182, Pixel.T_CHICO, MOSTAZA);
+        Pixel.textoCentrado(g, "v", 192, 203, Pixel.T_CHICO, MOSTAZA);
     }
 
     private void lampara(Graphics2D g, int cx, int cy) {
@@ -1131,7 +1425,7 @@ public class EscenaBuffet {
     }
 
     private void caja(Graphics2D g, int x, int y, int w, int h, int alto,
-                      Color frente, Color tapa, Color lado) {
+            Color frente, Color tapa, Color lado) {
         sombra(g, x - 2, y + alto + h - 4, w + 6, 7);
         r(g, x, y, w, alto, tapa);
         r(g, x, y + alto, w, h, frente);
@@ -1155,6 +1449,55 @@ public class EscenaBuffet {
     }
 
     // ------------------------------------------------------------------ personajes
+
+    /**
+     * Siluetas del apagón. Se dibujan antes de la máscara de luz; su propio halo y
+     * sus ojos
+     * las separan del negro para que el jugador pueda esquivarlas.
+     */
+    private void dibujarSombras(Graphics2D g, boolean delante) {
+        for (Sombra s : sombras) {
+            // Las que están más abajo pisan al jugador; las de arriba quedan detrás.
+            if ((s.y > y) != delante) {
+                continue;
+            }
+            int sx = (int) Math.round(s.x);
+            int sy = (int) Math.round(s.y);
+
+            // aura apenas visible sobre el negro del apagón
+            Pixel.elipse(g, sx - 13, sy - 34, 27, 36, new Color(38, 24, 58, 44));
+            Pixel.elipse(g, sx - 9, sy - 30, 19, 31, new Color(22, 14, 36, 90));
+
+            // silueta: cabeza redonda y cuerpo que se deshilacha
+            Pixel.elipse(g, sx - 6, sy - 29, 13, 13, new Color(6, 5, 10, 244));
+            r(g, sx - 5, sy - 20, 11, 14, new Color(6, 5, 10, 240));
+            r(g, sx - 6, sy - 16, 2, 9, new Color(6, 5, 10, 220));
+            r(g, sx + 5, sy - 15, 2, 8, new Color(6, 5, 10, 220));
+            for (int i = 0; i < 3; i++) {
+                int ondula = (int) Math.round(Math.sin(tick * 0.09 + s.fase + i) * 2);
+                r(g, sx - 4 + i * 3 + ondula, sy - 7, 2, 7 - i, new Color(6, 5, 10, 200));
+            }
+            // borde violáceo tenue
+            r(g, sx - 6, sy - 27, 1, 9, new Color(64, 40, 92, 90));
+            r(g, sx + 5, sy - 28, 1, 10, new Color(64, 40, 92, 90));
+        }
+    }
+
+    /**
+     * Los ojos van después de la máscara: son lo único que atraviesa la oscuridad.
+     */
+    private void dibujarOjosSombras(Graphics2D g) {
+        for (Sombra s : sombras) {
+            int sx = (int) Math.round(s.x);
+            int sy = (int) Math.round(s.y);
+            int brillo = 175 + (int) (Math.sin(tick * 0.14 + s.fase) * 45);
+            g.setColor(new Color(150, 255, 205, 28));
+            g.fillRect(sx - 6, sy - 28, 13, 7);
+            g.setColor(new Color(brillo, 255, 208, 230));
+            g.fillRect(sx - 4, sy - 25, 2, 2);
+            g.fillRect(sx + 2, sy - 25, 2, 2);
+        }
+    }
 
     private void dibujarJugador(Graphics2D g) {
         int px = (int) Math.round(x);
@@ -1342,9 +1685,23 @@ public class EscenaBuffet {
             pixelesLuz = new int[ANCHO * ALTO];
         }
         int cordura = Math.max(0, Math.min(100, juego.getJugador().getCordura()));
-        float ambiente = 0.60f - (100 - cordura) * 0.0024f;
-        List<Foco> focos = focosDeSala();
+        boolean apagon = juego.hayTareaPendiente(Lugar.TABLERO);
+        float ambiente = apagon ? 0.035f : 0.60f - (100 - cordura) * 0.0024f;
+        List<Foco> focos = new ArrayList<>(apagon ? focosApagon() : focosDeSala());
+        if (apagon) {
+            // Cada sombra arrastra su propia penumbra: se ven venir, pero siguen siendo
+            // negro.
+            for (Sombra s : sombras) {
+                focos.add(new Foco((int) Math.round(s.x), (int) Math.round(s.y) - 12, 30, 0.34f, true));
+            }
+        }
         float pulso = (float) (0.88 + Math.sin(tick * 0.08) * 0.08);
+        boolean linterna = juego.tieneLinterna();
+        float haloRadio2 = apagon ? (linterna ? 8100f : 3600f) : 2200f;
+        float haloIntensidad = apagon ? (linterna ? 0.90f : 0.58f) : 0.22f;
+        if (apagon) {
+            haloIntensidad *= (float) (0.90 + Math.sin(tick * 0.19) * 0.10);
+        }
         int[] pixeles = pixelesLuz;
 
         for (int yy = 0; yy < ALTO; yy++) {
@@ -1363,12 +1720,12 @@ public class EscenaBuffet {
                         luz += intensidad * (1f - d2 / radio2);
                     }
                 }
-                // halo del jugador: se ve un poco alrededor
+                // halo del jugador: en un apagón es lo único que lo acompaña
                 float pdx = xx - (float) x;
                 float pdy = yy - (float) y;
                 float pd2 = pdx * pdx + pdy * pdy;
-                if (pd2 < 2200f) {
-                    luz += 0.22f * (1f - pd2 / 2200f);
+                if (pd2 < haloRadio2) {
+                    luz += haloIntensidad * (1f - pd2 / haloRadio2);
                 }
                 // viñeta
                 float vx = (xx - ANCHO / 2f) / (ANCHO / 2f);
@@ -1395,6 +1752,38 @@ public class EscenaBuffet {
         float r2() {
             return (float) r * r;
         }
+    }
+
+    /**
+     * Durante un apagón no quedan lámparas de techo: solo el chispazo del tablero,
+     * la vela del
+     * conserje y una que otra rendija. La linterna del jugador se suma desde el
+     * halo.
+     */
+    private List<Foco> focosApagon() {
+        List<Foco> focos = new ArrayList<>();
+        switch (sala) {
+            case COMEDOR -> {
+                focos.add(new Foco(30, 78, 54, 0.46f, true));
+                focos.add(new Foco(10, 128, 34, 0.20f, false));
+                focos.add(new Foco(374, 128, 34, 0.20f, false));
+            }
+            case BANO -> {
+                focos.add(new Foco(374, 128, 32, 0.20f, false));
+                focos.add(new Foco(244, 44, 30, 0.12f, false));
+            }
+            case COCINA -> {
+                focos.add(new Foco(10, 128, 32, 0.20f, false));
+                focos.add(new Foco(192, 192, 42, 0.26f, false));
+            }
+            case ALMACEN -> {
+                focos.add(new Foco(342, 188, 38, 0.62f, true));
+                focos.add(new Foco(192, 192, 38, 0.20f, false));
+            }
+            default -> {
+            }
+        }
+        return focos;
     }
 
     private List<Foco> focosDeSala() {
@@ -1427,6 +1816,7 @@ public class EscenaBuffet {
                 focos.add(new Foco(62, 74, 42, 0.22f, false));
                 focos.add(new Foco(62, 148, 40, 0.20f, false));
                 focos.add(new Foco(192, 24, 62, 0.26f, false));
+                focos.add(new Foco(342, 188, 30, 0.16f, true));
                 break;
             default:
                 break;

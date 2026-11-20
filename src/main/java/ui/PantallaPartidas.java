@@ -13,15 +13,15 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Menú principal dibujado a mano sobre el mismo lienzo de 384x240 que el juego.
- * La idea es que la primera pantalla también sea pixel art: lista de partidas,
- * ficha del jugador, formulario de alta/edición y confirmación de borrado.
+ * Menú principal dibujado a mano sobre el mismo encuadre de 384x240 que el juego:
+ * lista de partidas, ficha del jugador, formulario de alta/edición y confirmación
+ * de borrado. Los paneles se alinean a la grilla del pixel art, pero el texto se
+ * dibuja a la resolución real de la ventana para que se lea nítido.
  */
 public class PantallaPartidas extends JPanel {
 
@@ -50,7 +50,6 @@ public class PantallaPartidas extends JPanel {
 
     private final PartidaService service;
     private final Consumer<Jugador> alJugar;
-    private final BufferedImage lienzo = new BufferedImage(ANCHO, ALTO, BufferedImage.TYPE_INT_ARGB);
     private final Timer timer;
     private final DefaultTableModel modeloPartidas;
     private final JTable tablaPartidas;
@@ -270,29 +269,23 @@ public class PantallaPartidas extends JPanel {
     @Override
     protected void paintComponent(Graphics g0) {
         super.paintComponent(g0);
-        dibujarLienzo();
-
         Graphics2D g = (Graphics2D) g0.create();
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-        g.setColor(new Color(0x060908));
-        g.fillRect(0, 0, getWidth(), getHeight());
+        Pixel.preparar(g);
+        Pixel.Encuadre encuadre = Pixel.pintarMarco(g, getWidth(), getHeight(), ANCHO, ALTO);
 
-        int escala = Math.max(1, Math.min(getWidth() / ANCHO, getHeight() / ALTO));
-        int ancho = ANCHO * escala;
-        int alto = ALTO * escala;
-        int x = (getWidth() - ancho) / 2;
-        int y = (getHeight() - alto) / 2;
-        g.drawImage(lienzo, x, y, ancho, alto, null);
-        g.setColor(new Color(0x24312B));
-        g.drawRect(x - 1, y - 1, ancho + 1, alto + 1);
+        // El menú se dibuja directo sobre la ventana con la escala del área de juego:
+        // los paneles siguen alineados a la grilla y el texto sale nítido y no pixelado.
+        Graphics2D ui = (Graphics2D) g.create();
+        Pixel.prepararInterfaz(ui);
+        ui.clipRect(encuadre.x(), encuadre.y(), encuadre.ancho(), encuadre.alto());
+        ui.translate(encuadre.x(), encuadre.y());
+        ui.scale(encuadre.escala(), encuadre.escala());
+        dibujarMenu(ui);
+        ui.dispose();
         g.dispose();
     }
 
-    private void dibujarLienzo() {
-        Graphics2D g = lienzo.createGraphics();
-        Pixel.preparar(g);
+    private void dibujarMenu(Graphics2D g) {
         dibujarFondo(g);
         dibujarTitulo(g);
         dibujarLista(g);
@@ -306,7 +299,6 @@ public class PantallaPartidas extends JPanel {
         } else if (capa == Capa.BORRAR) {
             dibujarConfirmacion(g);
         }
-        g.dispose();
     }
 
     private void dibujarFondo(Graphics2D g) {
@@ -347,20 +339,18 @@ public class PantallaPartidas extends JPanel {
             fila++;
         }
 
-        // Ventana con luna y lluvia animada.
-        ventana(g, 22, 12, 66, 46);
-        // Póster de la mascota perdida.
-        poster(g, 294, 12, 40, 50);
-        // Reloj de pared, detenido a las 3:33.
-        reloj(g, 168, 12);
-        // Dos lámparas cálidas sobre el título.
-        lampara(g, 118, 4);
-        lampara(g, 266, 4);
-        // Silueta del mostrador, apenas visible al fondo.
-        g.setColor(new Color(0x0B110E));
-        g.fillRect(126, 60, 132, 28);
-        g.setColor(new Color(0x1B2821));
-        g.fillRect(126, 60, 132, 4);
+        // Banda limpia para el título: el reloj, el póster y la ventana ya no
+        // se cruzan con las letras. Las lámparas quedan en los extremos.
+        g.setColor(new Color(0x08110E));
+        g.fillRect(0, 6, ANCHO, 41);
+        g.setColor(new Color(0x142019));
+        g.fillRect(0, 6, ANCHO, 1);
+        g.setColor(new Color(0x25382E));
+        g.fillRect(0, 46, ANCHO, 1);
+        g.setColor(new Color(0x0A120F));
+        g.fillRect(0, 47, ANCHO, 5);
+        lampara(g, 8, 4);
+        lampara(g, ANCHO - 8, 4);
     }
 
     private void dibujarTitulo(Graphics2D g) {
@@ -379,10 +369,10 @@ public class PantallaPartidas extends JPanel {
     private void dibujarLista(Graphics2D g) {
         Pixel.panel(g, LISTA.x, LISTA.y, LISTA.width, LISTA.height,
                 new Color(0x0B1210), Pixel.BORDE);
-        Pixel.texto(g, "PARTIDAS GUARDADAS", 22, 66, Pixel.T_CUERPO, Pixel.MOSTAZA, true);
+        Pixel.texto(g, "PARTIDAS", 22, 66, Pixel.T_CUERPO, Pixel.MOSTAZA, true);
         Pixel.textoDerecha(g, tablaPartidas.getRowCount()
                         + (tablaPartidas.getRowCount() == 1 ? " guardada" : " guardadas"),
-                362, 66, Pixel.T_CHICO, Pixel.GRIS_OSCURO);
+                240, 66, Pixel.T_CHICO, Pixel.GRIS_OSCURO);
         g.setColor(Pixel.BORDE);
         g.fillRect(20, 70, 224, 1);
 
@@ -507,10 +497,11 @@ public class PantallaPartidas extends JPanel {
             return;
         }
         List<String> lineas = Pixel.envolver(g, error, 320, Pixel.T_CHICO);
-        int alto = Math.min(2, lineas.size()) * 10 + 8;
+        int alto = Math.min(2, lineas.size()) * Pixel.altoLinea(Pixel.T_CHICO) + 7;
         Pixel.panelTenue(g, 24, 183 - alto, 336, alto, 235, Pixel.ROJO);
         for (int i = 0; i < Math.min(2, lineas.size()); i++) {
-            Pixel.textoCentrado(g, lineas.get(i), ANCHO / 2, 191 - alto + i * 10,
+            Pixel.textoCentrado(g, Pixel.recortar(g, lineas.get(i), 322, Pixel.T_CHICO, true),
+                    ANCHO / 2, 188 - alto + i * Pixel.altoLinea(Pixel.T_CHICO),
                     Pixel.T_CHICO, Pixel.ROJO_CLARO, true);
         }
     }
@@ -521,7 +512,7 @@ public class PantallaPartidas extends JPanel {
         Pixel.panel(g, 56, 34, 272, 180, new Color(0x0D1411), Pixel.BORDE_CLARO);
 
         String titulo = enEdicion == null ? "NUEVA PARTIDA" : "EDITAR PARTIDA";
-        Pixel.textoCentrado(g, titulo, ANCHO / 2, 57, Pixel.T_SUBTITULO, Pixel.MOSTAZA, true);
+        Pixel.textoCentradoDisplay(g, titulo, ANCHO / 2, 58, Pixel.T_SUBTITULO, Pixel.MOSTAZA, true);
         Pixel.textoCentrado(g, enEdicion == null
                 ? "Anotá tu nombre y el día en que arrancás."
                 : "Cambiá el nombre o el día guardado.", ANCHO / 2, 70, Pixel.T_CHICO, Pixel.GRIS);
@@ -558,15 +549,22 @@ public class PantallaPartidas extends JPanel {
     private void dibujarConfirmacion(Graphics2D g) {
         g.setColor(new Color(3, 5, 5, 200));
         g.fillRect(0, 0, ANCHO, ALTO);
-        Pixel.panel(g, 72, 72, 240, 112, new Color(0x120C0B), new Color(0x6E231F));
+        Pixel.panel(g, 64, 62, 256, 126, new Color(0x120C0B), new Color(0x6E231F));
 
-        Pixel.textoCentrado(g, "BORRAR PARTIDA", ANCHO / 2, 96, Pixel.T_SUBTITULO,
+        Pixel.textoCentradoDisplay(g, "BORRAR PARTIDA", ANCHO / 2, 86, Pixel.T_SUBTITULO,
                 Pixel.ROJO_CLARO, true);
         String quien = porBorrar == null ? "" : porBorrar.getNombre();
-        Pixel.textoCentrado(g, "¿Seguro que querés borrar a " + quien + "?",
-                ANCHO / 2, 116, Pixel.T_CUERPO, Pixel.CREMA);
+        List<String> pregunta = Pixel.envolver(g, "¿Seguro que querés borrar a " + quien + "?",
+                228, Pixel.T_CUERPO);
+        int py = 106;
+        for (int i = 0; i < Math.min(2, pregunta.size()); i++) {
+            String linea = i == 1 ? Pixel.recortar(g, pregunta.get(i), 228, Pixel.T_CUERPO, false)
+                    : pregunta.get(i);
+            Pixel.textoCentrado(g, linea, ANCHO / 2, py, Pixel.T_CUERPO, Pixel.CREMA);
+            py += Pixel.altoLinea(Pixel.T_CUERPO);
+        }
         Pixel.textoCentrado(g, "Esta acción no se puede deshacer.",
-                ANCHO / 2, 130, Pixel.T_CHICO, Pixel.GRIS);
+                ANCHO / 2, 136, Pixel.T_CHICO, Pixel.GRIS);
 
         boton(g, BTN_BORRAR_SI, "BORRAR", true, true);
         boton(g, BTN_BORRAR_NO, "CANCELAR", confirmacion == 1, false);
@@ -580,8 +578,10 @@ public class PantallaPartidas extends JPanel {
                     BTN_BORRAR_NO.width + 1, BTN_BORRAR_NO.height + 1);
         }
 
+        int tamAyuda = Pixel.tamAjustado(g, "ENTER confirmar  ·  ESC cancelar  ·  ← → elegir",
+                224, Pixel.T_CHICO, Pixel.T_CHICO - 2);
         Pixel.textoCentrado(g, "ENTER confirmar  ·  ESC cancelar  ·  ← → elegir",
-                ANCHO / 2, 177, Pixel.T_CHICO, Pixel.GRIS_OSCURO);
+                ANCHO / 2, 178, tamAyuda, Pixel.GRIS_OSCURO);
     }
 
     // ------------------------------------------------------------------ teclado
@@ -756,17 +756,11 @@ public class PantallaPartidas extends JPanel {
 
     /** Convierte el clic de la ventana a coordenadas del lienzo interno de 384x240. */
     private Point aLienzo(MouseEvent e) {
-        int escala = Math.max(1, Math.min(getWidth() / ANCHO, getHeight() / ALTO));
-        int ancho = ANCHO * escala;
-        int alto = ALTO * escala;
-        int ox = (getWidth() - ancho) / 2;
-        int oy = (getHeight() - alto) / 2;
-        int x = (e.getX() - ox) / escala;
-        int y = (e.getY() - oy) / escala;
-        if (x < 0 || y < 0 || x >= ANCHO || y >= ALTO) {
+        Pixel.Encuadre encuadre = Pixel.calcularLienzo(getWidth(), getHeight(), ANCHO, ALTO);
+        if (!encuadre.contiene(e.getX(), e.getY())) {
             return null;
         }
-        return new Point(x, y);
+        return new Point(encuadre.lienzoX(e.getX()), encuadre.lienzoY(e.getY()));
     }
 
     // ------------------------------------------------------------------ acciones
@@ -966,7 +960,7 @@ public class PantallaPartidas extends JPanel {
         r(g, x + 15, y + 15, 9, 7, new Color(0x4A5A50));
         r(g, x + 17, y + 10, 1, 1, new Color(0xE8E4D4));
         r(g, x + 21, y + 10, 1, 1, new Color(0xE8E4D4));
-        Pixel.texto(g, "PERDIDA", x + 5, y + 34, 6, new Color(0x5A3428), true);
+        Pixel.textoDisplay(g, "PERDIDA", x + 5, y + 34, 6, new Color(0x5A3428), true);
         r(g, x + 5, y + 38, w - 10, 1, new Color(0x8C7A5C));
         r(g, x + 5, y + 42, w - 14, 1, new Color(0x8C7A5C));
         r(g, x + 5, y + 46, w - 11, 1, new Color(0x8C7A5C));
